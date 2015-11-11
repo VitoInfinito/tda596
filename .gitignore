@@ -35,5 +35,6 @@
 *.privatekey
 *.publickey
 
+# Seattle overwritten files
 *.py
 *.pyc
