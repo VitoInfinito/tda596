@@ -34,3 +34,6 @@
 # Seash keys
 *.privatekey
 *.publickey
+
+*.py
+*.pyc
