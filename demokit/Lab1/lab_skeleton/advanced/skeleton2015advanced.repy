@@ -8,6 +8,10 @@ def start_board():
   ip = mycontext['ip']
   port = mycontext['port']
   print "Listening on IP " + str(ip) +" port " + str(port)
+
+  # Printing IP of other servers
+  for line in mycontext['ipAddresses']:
+    print "Found neighbour IP: " + line
   try: 
     listencommhandle = waitforconn(ip,port,board)
   except Exception, e:
@@ -28,13 +32,27 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
       stopcomm(thiscommhandle)   
     elif msgheader.startswith( 'POST' ):
-    	print "got POST:\n", msgheader
+      update_board(fetch_comment(msgheader))
     else:
     	print "got something:\n", msgheader
   except Exception, e:
     print "Exception in board: %s, %s\n" %(type(e), e)
     raise
     #pass
+
+def fetch_comment(msg):
+  comment_index = msg.find("comment=") + 8
+  return msg[comment_index:]
+
+def update_board(msg):
+  print msg
+  for ip in mycontext['ipAddresses']:
+    if ip != mycontext['ip']:
+      print "ye", ip
+    else:
+      print "no", ip
+
+  return 0
     
 # ------------------------------------------------------------------------------
 # Outputs the blackboard html 
@@ -90,6 +108,14 @@ if callfunc == 'initialize':
   mycontext['port'] = port
   mycontext['ip'] = ip
   
+  # Fetch the neighbouring nodes
+  mycontext['ipAddresses'] = []
+  for line in file("ipAddresses.txt"):
+    mycontext['ipAddresses'].append(line.strip())
+
+  # Initialize message board
+  mycontext['board'] = []
+
   #read header and footer html files
   mycontext['headerhtml'] = file("header.html").read()
   mycontext['footerhtml'] = file("footer.html").read()
