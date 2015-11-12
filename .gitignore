@@ -36,5 +36,5 @@
 *.publickey
 
 # Seattle overwritten files
-*.py
-*.pyc
+# *.py
+# *.pyc
