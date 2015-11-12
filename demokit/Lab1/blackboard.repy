@@ -32,9 +32,10 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
       stopcomm(thiscommhandle)   
     elif msgheader.startswith( 'POST' ):
-      update_board(fetch_comment(msgheader))
+      print msgheader
+      update_board(fetch_comment(msgheader), ip, port)
     else:
-    	print "got something:\n", msgheader
+    	rec_msg(msgheader)
   except Exception, e:
     print "Exception in board: %s, %s\n" %(type(e), e)
     raise
@@ -44,13 +45,40 @@ def fetch_comment(msg):
   comment_index = msg.find("comment=") + 8
   return msg[comment_index:]
 
-def update_board(msg):
-  print msg
+def update_board(msg, ip, port):
+  mycontext['board'].append(msg)
+  for board_msg in mycontext['board']:
+    print board_msg
+
+  local_port = mycontext['port']
+  print ip
+  print port
+  print local_port
   for ip in mycontext['ipAddresses']:
     if ip != mycontext['ip']:
       print "ye", ip
+      send_msg(msg, ip, local_port)
     else:
       print "no", ip
+
+  return 0
+
+def rec_msg(msg):
+  request = msg.split('\n', 1)[0]
+  comment = fetch_comment(msg)
+
+  if request == "BOARDUPDATE":
+    mycontext['board'].append(comment)
+
+
+  return 0
+
+def send_msg(msg, ip, port):
+  socketobject = openconn(ip, port)
+
+  socketobject.send("BOARDUPDATE\ncomment=" + msg)
+
+  socketobject.close()
 
   return 0
     
@@ -61,8 +89,8 @@ def update_board(msg):
 def generate_html_page(status=""):
   #Initialize blackboard content
   
-  # one sample entry
-  entry = "Empty..."
+  # Add messages to entry when loading page
+  entry = '<br>'.join(mycontext['board'])
   content ='<div class="entry">%s</div>' %( entry )
   
   # dynamic title showing Ip address, port and up time.
