@@ -36,16 +36,22 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       sockobj.send("HTTP/1.1 200 OK")
       update_board(fetch_comment(msgheader), ip, port)
     else:
-    	rec_msg(msgheader)
+    	rec_msg(msgheader, sockobj)
   except Exception, e:
     print "Exception in board: %s, %s\n" %(type(e), e)
     raise
     #pass
 
+# ------------------------------------------------------------------------------    
+# Called when we need to parse the comment out of a received message
+# ------------------------------------------------------------------------------ 
 def fetch_comment(msg):
   comment_index = msg.find("comment=") + 8
   return msg[comment_index:]
 
+# ------------------------------------------------------------------------------    
+# Called when we have a message to update the board with
+# ------------------------------------------------------------------------------ 
 def update_board(msg, ip, port):
   mycontext['board'].append(msg)
   for board_msg in mycontext['board']:
@@ -64,23 +70,33 @@ def update_board(msg, ip, port):
 
   return 0
 
-def rec_msg(msg):
+# ------------------------------------------------------------------------------    
+# Called when we receive a message that is not POST or GET
+# ------------------------------------------------------------------------------ 
+def rec_msg(msg, sockobj):
+  # Parsing out request and comment from message 
   request = msg.split('\n', 1)[0]
   comment = fetch_comment(msg)
 
   if request == "BOARDUPDATE":
+    # Message received was TCP. Closing connection
+    sockobj.close()
+    # Closing connection
     mycontext['board'].append(comment)
 
 
   return 0
 
+# ------------------------------------------------------------------------------    
+# Called when we need to send a message to another node
+# ------------------------------------------------------------------------------ 
 def send_msg(msg, ip, port):
   print "Sending message to " + ip
   socketobject = openconn(ip, port)
 
   socketobject.send("BOARDUPDATE\ncomment=" + msg)
 
-  socketobject.close()
+  #socketobject.close()
 
   return 0
     
