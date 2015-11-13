@@ -53,21 +53,14 @@ def fetch_comment(msg):
 # Called when we have a message to update the board with
 # ------------------------------------------------------------------------------ 
 def update_board(msg, ip, port):
+  # Adding the new message to the current board
   mycontext['board'].append(msg)
-  for board_msg in mycontext['board']:
-    print board_msg
-
   local_port = mycontext['port']
-  print ip
-  print port
-  print local_port
   for ip in mycontext['ipAddresses']:
+    # Checking if the ip is the machine we are on or not.
+    # Sending messages only to the other nodes in the network
     if ip != mycontext['ip']:
-      print "ye", ip
       send_msg(msg, ip, local_port)
-    else:
-      print "no", ip
-
   return 0
 
 # ------------------------------------------------------------------------------    
@@ -78,10 +71,11 @@ def rec_msg(msg, sockobj):
   request = msg.split('\n', 1)[0]
   comment = fetch_comment(msg)
 
+  # If message had request BOARDUPDATE, we received a new comment from another node
   if request == "BOARDUPDATE":
     # Message received was TCP. Closing connection
     sockobj.close()
-    # Closing connection
+    # Adding message received to the board
     mycontext['board'].append(comment)
 
 
@@ -92,12 +86,10 @@ def rec_msg(msg, sockobj):
 # ------------------------------------------------------------------------------ 
 def send_msg(msg, ip, port):
   print "Sending message to " + ip
+  # Opening a socket connection to the chosen node
   socketobject = openconn(ip, port)
-
+  # Sending a message over the opened connection
   socketobject.send("BOARDUPDATE\ncomment=" + msg)
-
-  #socketobject.close()
-
   return 0
     
 # ------------------------------------------------------------------------------
