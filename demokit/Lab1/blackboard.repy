@@ -33,6 +33,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       stopcomm(thiscommhandle)   
     elif msgheader.startswith( 'POST' ):
       print msgheader
+      sockobj.send("HTTP/1.1 200 OK")
       update_board(fetch_comment(msgheader), ip, port)
     else:
     	rec_msg(msgheader)
@@ -74,6 +75,7 @@ def rec_msg(msg):
   return 0
 
 def send_msg(msg, ip, port):
+  print "Sending message to " + ip
   socketobject = openconn(ip, port)
 
   socketobject.send("BOARDUPDATE\ncomment=" + msg)
