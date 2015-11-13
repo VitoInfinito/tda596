@@ -1,6 +1,3 @@
-# FEEL FREE TO CHANGE THE CODE. 
-# This is just a dull example
-
 # ------------------------------------------------------------------------------   
 # Start listening and handle incoming connections in board() function
 # ------------------------------------------------------------------------------   
@@ -73,11 +70,10 @@ def rec_msg(msg, sockobj):
 
   # If message had request BOARDUPDATE, we received a new comment from another node
   if request == "BOARDUPDATE":
-    # Message received was TCP. Closing connection
+    # Message received was through socket. Closing connection
     sockobj.close()
     # Adding message received to the board
     mycontext['board'].append(comment)
-
 
   return 0
 
