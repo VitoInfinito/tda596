@@ -30,9 +30,9 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       stopcomm(thiscommhandle)   
     elif msgheader.startswith( 'POST' ):
       sockobj.send("HTTP/1.1 200 OK")
-      stopcomm(thiscommhandle)
       # Do we need stopcomm in else below? Why does it not work?
       update_board(fetch_comment(msgheader))
+      stopcomm(thiscommhandle)
     else:
     	rec_msg(msgheader, sockobj)
   except Exception, e:
@@ -62,7 +62,6 @@ def update_board(msg):
     # Sending messages only to the other nodes in the network
     if ip != mycontext['ip']:
       send_msg(msg, ip, local_port)
-  return 0
 
 # ------------------------------------------------------------------------------    
 # Called when we receive a message that is not POST or GET
@@ -75,7 +74,7 @@ def rec_msg(msg, sockobj):
   # If message had request BOARDUPDATE, we received a new comment from another node
   if request == "BOARDUPDATE":
     # Message received was through socket. Closing connection
-    sockobj.close()
+    # sockobj.close()
     # Adding message received to the board
     mycontext['board'].append(comment)
 
@@ -88,7 +87,6 @@ def send_msg(msg, ip, port):
   socketobject = openconn(ip, port)
   # Sending a message over the opened connection
   socketobject.send("BOARDUPDATE\ncomment=" + msg)
-  return 0
     
 # ------------------------------------------------------------------------------
 # Outputs the blackboard html 
