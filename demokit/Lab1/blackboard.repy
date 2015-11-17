@@ -6,9 +6,6 @@ def start_board():
   port = mycontext['port']
   print "Listening on IP " + str(ip) +" port " + str(port)
 
-  # Printing IP of other servers
-  for line in mycontext['ipAddresses']:
-    print "Found neighbour IP: " + line
   try: 
     listencommhandle = waitforconn(ip,port,board)
   except Exception, e:
@@ -29,19 +26,18 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
       stopcomm(thiscommhandle)   
     elif msgheader.startswith( 'POST' ):
+      # Sending response to POST request
       sockobj.send("HTTP/1.1 200 OK")
-      # Do we need stopcomm in else below? Why does it not work?
-      update_board(fetch_comment(msgheader))
+      # Stopping communication
       stopcomm(thiscommhandle)
+      # Sending parsed message to the board update function
+      update_board(fetch_comment(msgheader))
     else:
-    	rec_msg(msgheader, sockobj)
+    	rec_msg(msgheader)
   except Exception, e:
     print "Exception in board: %s, %s\n" %(type(e), e)
     raise
     #pass
-
-  # Close connection?
-  # stopcomm(thiscommhandle) ?? for POST and else
 
 # ------------------------------------------------------------------------------    
 # Called when we need to parse the comment out of a received message
@@ -66,15 +62,13 @@ def update_board(msg):
 # ------------------------------------------------------------------------------    
 # Called when we receive a message that is not POST or GET
 # ------------------------------------------------------------------------------ 
-def rec_msg(msg, sockobj):
+def rec_msg(msg):
   # Parsing out request and comment from message 
   request = msg.split('\n', 1)[0]
   comment = fetch_comment(msg)
 
   # If message had request BOARDUPDATE, we received a new comment from another node
   if request == "BOARDUPDATE":
-    # Message received was through socket. Closing connection
-    # sockobj.close()
     # Adding message received to the board
     mycontext['board'].append(comment)
 
@@ -87,6 +81,8 @@ def send_msg(msg, ip, port):
   socketobject = openconn(ip, port)
   # Sending a message over the opened connection
   socketobject.send("BOARDUPDATE\ncomment=" + msg)
+  # Closing socket when message has been sent
+  socketobject.close()
     
 # ------------------------------------------------------------------------------
 # Outputs the blackboard html 
