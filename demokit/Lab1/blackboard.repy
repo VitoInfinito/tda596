@@ -5,6 +5,8 @@ def start_board():
   ip = mycontext['ip']
   port = mycontext['port']
   print "Listening on IP " + str(ip) +" port " + str(port)
+  print "My ID is " + str(mycontext['id'])
+  print "My ring neighbour is at " + mycontext['ringNeighbour']
 
   try: 
     listencommhandle = waitforconn(ip,port,board)
@@ -83,6 +85,9 @@ def send_msg(msg, ip, port):
   socketobject.send("BOARDUPDATE\ncomment=" + msg)
   # Closing socket when message has been sent
   socketobject.close()
+
+def initiate_election():
+  return 0
     
 # ------------------------------------------------------------------------------
 # Outputs the blackboard html 
@@ -138,13 +143,30 @@ if callfunc == 'initialize':
   mycontext['port'] = port
   mycontext['ip'] = ip
   
+  # Initializing ring neighbour to be empty
+  mycontext['ringNeighbour'] = ""
   # Fetch the neighbouring nodes
   mycontext['ipAddresses'] = []
   for line in file("ipAddresses.txt"):
     mycontext['ipAddresses'].append(line.strip())
+    # If the found ip is equal to vessels ip, unbind variable ringNeighbour
+    # to make sure the next ip is set as the new ring neighbour
+    if line.strip() == str(ip):
+      mycontext['ringNeighbour'] = ""
+    # If there is no ring neighbour set, set the currently found ip to be new ring neighbour
+    elif mycontext['ringNeighbour'] == "":
+      mycontext['ringNeighbour'] = line.strip()
+
+  # (Edge case) If the ip was found last in the list, the ring neighbour should be the first from the list
+  if mycontext['ringNeighbour'] == "":
+    mycontext['ringNeighbour'] = mycontext['ipAddresses'][0]
+
 
   # Initialize message board
   mycontext['board'] = []
+
+  # Initialize random ID
+  mycontext['id'] = randomfloat()
 
   #read header and footer html files
   mycontext['headerhtml'] = file("header.html").read()
