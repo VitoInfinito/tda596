@@ -59,20 +59,21 @@ def update_board(msg):
     # Checking if the ip is the machine we are on or not.
     # Sending messages only to the other nodes in the network
     if ip != mycontext['ip']:
-      send_msg(msg, ip, local_port)
+      send_msg("BOARDUPDATE\ncomment=" + msg, ip, local_port)
 
 # ------------------------------------------------------------------------------    
 # Called when we receive a message that is not POST or GET
 # ------------------------------------------------------------------------------ 
 def rec_msg(msg):
-  # Parsing out request and comment from message 
+  # Parsing out request from message 
   request = msg.split('\n', 1)[0]
-  comment = fetch_comment(msg)
 
   # If message had request BOARDUPDATE, we received a new comment from another node
   if request == "BOARDUPDATE":
-    # Adding message received to the board
-    mycontext['board'].append(comment)
+    # Adding parsed message received to the board
+    mycontext['board'].append(fetch_comment(msg))
+  elif request == "ELECTION":
+    print "Attempting election"
 
 # ------------------------------------------------------------------------------    
 # Called when we need to send a message to another node
@@ -82,7 +83,7 @@ def send_msg(msg, ip, port):
   # Opening a socket connection to the chosen node
   socketobject = openconn(ip, port)
   # Sending a message over the opened connection
-  socketobject.send("BOARDUPDATE\ncomment=" + msg)
+  socketobject.send(msg)
   # Closing socket when message has been sent
   socketobject.close()
 
@@ -99,6 +100,9 @@ def generate_html_page(status=""):
   # Add messages to entry when loading page
   entry = '<br>'.join(mycontext['board'])
   content ='<div class="entry">%s</div>' %( entry )
+
+  # Displaying the leader ip with its id
+  leader = '<div>Leader has ID %s and is at IP %s</div>' %(mycontext['hid'], mycontext['hip'])
   
   # dynamic title showing Ip address, port and up time.
   board_title = '<div id="boardtitle_placeholder" class="boardtitle">Board contents at host: %s:%u, up time: %u sec.</div>' %(mycontext['ip'], mycontext['port'], int(getruntime()))  
@@ -111,7 +115,7 @@ def generate_html_page(status=""):
   status_message = "<div class='status'>%s</div>" % (status)
   
   #Concatenate strings into huge string representing the final html
-  content = "".join([mycontext['headerhtml'], status_message, content, mycontext['footerhtml']])
+  content = "".join([mycontext['headerhtml'], status_message, content, leader, mycontext['footerhtml']])
   
   #print content
   return content
@@ -139,9 +143,9 @@ if callfunc == 'initialize':
   else:
     raise Exception("Specify a port only for auto detection of IP, or specify IP and port")
 
-  #Initialize Port and IP
+  #Initialize Port and IP with highest IP found as current IP
   mycontext['port'] = port
-  mycontext['ip'] = ip
+  mycontext['hip'] = mycontext['ip'] = ip
   
   # Initializing ring neighbour to be empty
   mycontext['ringNeighbour'] = ""
@@ -165,8 +169,8 @@ if callfunc == 'initialize':
   # Initialize message board
   mycontext['board'] = []
 
-  # Initialize random ID
-  mycontext['id'] = randomfloat()
+  # Initialize random ID and setting highest id found (hid) as it
+  mycontext['hid'] = mycontext['id'] = randomfloat()
 
   #read header and footer html files
   mycontext['headerhtml'] = file("header.html").read()
