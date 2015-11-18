@@ -57,30 +57,38 @@ def fetch_id(msg):
 # Called when we need to parse the ip out of a received message
 # ------------------------------------------------------------------------------ 
 def fetch_ip(msg):
-  return parse_line(msg, "ip")
+  return parse_line(msg, "ip=")
 
 # ------------------------------------------------------------------------------    
 # Returns the first found string following search in lines
 # ------------------------------------------------------------------------------ 
-def parse_line(lines, search):
+def parse_line(lines, searchfield):
   for line in lines.split('\n'):
-    line_index = line.find(search)
+    line_index = line.find(searchfield)
     if line_index != -1:
-      return line[line_index+len(search):]
+      return line[line_index+len(searchfield):]
     
-
 # ------------------------------------------------------------------------------    
 # Called when we have a message to update the board with
 # ------------------------------------------------------------------------------ 
 def update_board(msg):
   # Adding the new message to the current board
-  mycontext['board'].append(msg)
+  append_to_board(msg)
   local_port = mycontext['port']
   for ip in mycontext['ipAddresses']:
     # Checking if the ip is the machine we are on or not.
     # Sending messages only to the other nodes in the network
     if ip != mycontext['ip']:
       send_msg("BOARDUPDATE\ncomment=" + msg, ip, local_port)
+
+# ------------------------------------------------------------------------------    
+# Appends a message to the board with respect to mutex
+# ------------------------------------------------------------------------------ 
+def append_to_board(msg):
+  mycontext['lock'].acquire()
+  mycontext['board'].append(msg)
+  mycontext['lock'].release()
+
 
 # ------------------------------------------------------------------------------    
 # Called when we receive a message that is not POST or GET
@@ -92,11 +100,9 @@ def rec_msg(msg):
   # If message had request BOARDUPDATE, we received a new comment from another node
   if request == "BOARDUPDATE":
     # Adding parsed message received to the board
-    mycontext['board'].append(fetch_comment(msg))
+    append_to_board(fetch_comment(msg))
   elif request == "ELECTION":
-    foundID = 0
-    if mycontext['hid'] < foundID:
-      print "Do something"
+    handle_election()
 
 # ------------------------------------------------------------------------------    
 # Called when we need to send a message to another node
@@ -111,9 +117,15 @@ def send_msg(msg, ip, port):
   socketobject.close()
 
 def initiate_election():
-  electionMsg = "ELECTION\nid=" + mycontext['id'] + "\nip=" + mycontext['id']
+  electionMsg = "ELECTION\nid=" + mycontext['id'] + "\nip=" + mycontext['ip']
   send_msg(electionMsg, ip, local_port)
-  return 0
+
+def handle_election(receivedId, receivedIp):
+  if mycontext['hid'] < receivedId:
+    mycontext['hid'] = receivedId
+    mycontext['hip'] = receivedIp
+
+  send_msg("ELECTION\nid=" + mycontext['hid'] + "\nip=" + mycontext['hip'])
     
 # ------------------------------------------------------------------------------
 # Outputs the blackboard html 
@@ -196,6 +208,9 @@ if callfunc == 'initialize':
 
   # Initialize random ID and setting highest id found (hid) as it
   mycontext['hid'] = mycontext['id'] = randomfloat()
+
+  # Initialize lock to handle mutex
+  mycontext['lock'] = getlock()
 
   #read header and footer html files
   mycontext['headerhtml'] = file("header.html").read()
