@@ -45,8 +45,29 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
 # Called when we need to parse the comment out of a received message
 # ------------------------------------------------------------------------------ 
 def fetch_comment(msg):
-  comment_index = msg.find("comment=") + 8
-  return msg[comment_index:]
+  return parse_line(msg, "comment=")
+
+# ------------------------------------------------------------------------------    
+# Called when we need to parse the id out of a received message
+# ------------------------------------------------------------------------------ 
+def fetch_id(msg):
+  return parse_line(msg, "id=")
+
+# ------------------------------------------------------------------------------    
+# Called when we need to parse the ip out of a received message
+# ------------------------------------------------------------------------------ 
+def fetch_ip(msg):
+  return parse_line(msg, "ip")
+
+# ------------------------------------------------------------------------------    
+# Returns the first found string following search in lines
+# ------------------------------------------------------------------------------ 
+def parse_line(lines, search):
+  for line in lines.split('\n'):
+    line_index = line.find(search)
+    if line_index != -1:
+      return line[line_index+len(search):]
+    
 
 # ------------------------------------------------------------------------------    
 # Called when we have a message to update the board with
@@ -73,7 +94,9 @@ def rec_msg(msg):
     # Adding parsed message received to the board
     mycontext['board'].append(fetch_comment(msg))
   elif request == "ELECTION":
-    print "Attempting election"
+    foundID = 0
+    if mycontext['hid'] < foundID:
+      print "Do something"
 
 # ------------------------------------------------------------------------------    
 # Called when we need to send a message to another node
@@ -88,6 +111,8 @@ def send_msg(msg, ip, port):
   socketobject.close()
 
 def initiate_election():
+  electionMsg = "ELECTION\nid=" + mycontext['id'] + "\nip=" + mycontext['id']
+  send_msg(electionMsg, ip, local_port)
   return 0
     
 # ------------------------------------------------------------------------------
