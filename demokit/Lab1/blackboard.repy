@@ -12,6 +12,7 @@ def start_board():
     listencommhandle = waitforconn(ip,port,board)
     print "Initiating election"
     #initiate_election(mycontext['ringNeighbour'], port)
+    # Better solution than waiting for all listen commands to establish?
     settimer(5, initiate_election, [mycontext['ringNeighbour'], port])
   except Exception, e:
     print "Exception in start_board: %s, %s\n" %(type(e), e)
@@ -38,8 +39,8 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       # Sending parsed message to the board update function
       update_board(fetch_comment(msgheader))
     else:
-      #stopcomm(thiscommhandle)
     	rec_msg(msgheader)
+
   except Exception, e:
     print "Exception in board: %s, %s\n" %(type(e), e)
     raise
@@ -76,6 +77,19 @@ def parse_line(lines, searchfield):
 # Called when we have a message to update the board with
 # ------------------------------------------------------------------------------ 
 def update_board(msg):
+  # I am leader
+  if mycontext['ip'] == mycontext['hid']:
+    send_to_slaves(msg)
+  # I am not leader
+  else:
+    send_to_leader(msg)
+
+
+def send_to_leader(msg):
+  send_msg("BOARDUPDATE\ncomment=" + msg, mycontext['hip'], mycontext['port'])
+  
+
+def send_to_slaves(msg):
   # Adding the new message to the current board
   append_to_board(msg)
   local_port = mycontext['port']
@@ -83,7 +97,7 @@ def update_board(msg):
     # Checking if the ip is the machine we are on or not.
     # Sending messages only to the other nodes in the network
     if ip != mycontext['ip']:
-      send_msg("BOARDUPDATE\ncomment=" + msg, ip, local_port)
+      send_msg("LEADERUPDATE\ncomment=" + msg, ip, local_port)
 
 # ------------------------------------------------------------------------------    
 # Appends a message to the board with respect to mutex
@@ -101,13 +115,17 @@ def rec_msg(msg):
   # Parsing out request from message 
   request = msg.split('\n', 1)[0]
 
-  # If message had request BOARDUPDATE, we received a new comment from another node
-  if request == "BOARDUPDATE":
+  # If message had request LEADERUPDATE, we received a new comment from the leader node
+  if request == "LEADERUPDATE":
     # Adding parsed message received to the board
     append_to_board(fetch_comment(msg))
+  # Got request ELECTION, sends message to election function
   elif request == "ELECTION":
     print "Got election message"
     handle_election(fetch_id(msg), fetch_ip(msg))
+  # Got request BOARDUPDATE and I am leader, sends message to all slaves
+  elif request == "BOARDUPDATE" and mycontext['hip'] == mycontext['ip']:
+    send_to_slaves(fetch_comment(msg))
 
 # ------------------------------------------------------------------------------    
 # Called when we need to send a message to another node
