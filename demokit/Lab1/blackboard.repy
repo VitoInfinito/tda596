@@ -43,8 +43,13 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
 
   except Exception, e:
     print "Exception in board: %s, %s\n" %(type(e), e)
-    raise
-    #pass
+    
+    # What to write here?
+    #if type(e) == Exception.socket.error:
+      #print "got a socket error"
+
+    #raise
+    pass
 
 # ------------------------------------------------------------------------------    
 # Called when we need to parse the comment out of a received message
@@ -72,16 +77,21 @@ def parse_line(lines, searchfield):
     line_index = line.find(searchfield)
     if line_index != -1:
       return line[line_index+len(searchfield):]
+
+def request_msg(msgId, ip):
+  print "Request of specific message from slave or send a request to leader"
     
 # ------------------------------------------------------------------------------    
 # Called when we have a message to update the board with
 # ------------------------------------------------------------------------------ 
 def update_board(msg):
   # I am leader
-  if mycontext['ip'] == mycontext['hid']:
+  if mycontext['ip'] == mycontext['hip']:
+    print "I am leader"
     send_to_slaves(msg)
   # I am not leader
   else:
+    print "I am slave"
     send_to_leader(msg)
 
 
@@ -93,6 +103,7 @@ def send_to_slaves(msg):
   # Adding the new message to the current board
   append_to_board(msg)
   local_port = mycontext['port']
+  print "SENDING TO SLAVES"
   for ip in mycontext['ipAddresses']:
     # Checking if the ip is the machine we are on or not.
     # Sending messages only to the other nodes in the network
@@ -118,6 +129,7 @@ def rec_msg(msg):
   # If message had request LEADERUPDATE, we received a new comment from the leader node
   if request == "LEADERUPDATE":
     # Adding parsed message received to the board
+    print "RECEIVED FROM LEADER"
     append_to_board(fetch_comment(msg))
   # Got request ELECTION, sends message to election function
   elif request == "ELECTION":
@@ -125,6 +137,7 @@ def rec_msg(msg):
     handle_election(fetch_id(msg), fetch_ip(msg))
   # Got request BOARDUPDATE and I am leader, sends message to all slaves
   elif request == "BOARDUPDATE" and mycontext['hip'] == mycontext['ip']:
+    print "RECEIVED FROM SLAVES"
     send_to_slaves(fetch_comment(msg))
 
 # ------------------------------------------------------------------------------    
