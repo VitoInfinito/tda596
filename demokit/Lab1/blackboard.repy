@@ -52,8 +52,9 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
     if stre == "Socket closed" or stre == "timed out":
       print "Socket error. Ignoring"
       # Checking if ongoing election was interrupted
-      #if mycontext['isElection'] == True:
+      if mycontext['isElection'] == True:
         #initiate_election(mycontext['ringNeighbour'], mycontext['port'])
+        send_msg("ELECTION\nid=" + str(mycontext['hid']) + "\nip=" + str(mycontext['hip']), mycontext['ringNeighbour'], mycontext['port'])
       pass
     else:
       print "Exception in board: %s, %s\n" %(type(e), e)
@@ -85,9 +86,6 @@ def parse_line(lines, searchfield):
     line_index = line.find(searchfield)
     if line_index != -1:
       return line[line_index+len(searchfield):]
-
-def request_msg(msgId, ip):
-  print "Request of specific message from slave or send a request to leader"
     
 # ------------------------------------------------------------------------------    
 # Called when we have a message to update the board with
@@ -95,20 +93,23 @@ def request_msg(msgId, ip):
 def update_board(msg):
   # I am leader
   if mycontext['ip'] == mycontext['hip']:
-    print "I am leader"
     mycontext['boardLock'].acquire()
     send_to_slaves(msg)
     mycontext['boardLock'].release()
   # I am not leader
   else:
-    print "I am slave"
     send_to_leader(msg)
 
-
+# ------------------------------------------------------------------------------    
+# Sends a message to the leader
+# ------------------------------------------------------------------------------ 
 def send_to_leader(msg):
+  print "SENDING TO LEADER"
   send_msg("BOARDUPDATE\ncomment=" + msg, mycontext['hip'], mycontext['port'])
   
-
+# ------------------------------------------------------------------------------    
+# Sends a message to the slaves from the leader
+# ------------------------------------------------------------------------------ 
 def send_to_slaves(msg):
   # Adding the new message to the current board
   append_to_board(msg)
@@ -132,11 +133,12 @@ def append_to_board(msg):
 def append_to_buffer(msg):
   mycontext['buffer'].append(msg)
 
+# ------------------------------------------------------------------------------    
+# Updates bord from buffer
+# ------------------------------------------------------------------------------ 
 def send_buffer():
   for msg in mycontext['buffer']:
     update_board(msg)
-  
-
 
 # ------------------------------------------------------------------------------    
 # Called when we receive a message that is not POST or GET
@@ -150,12 +152,13 @@ def rec_msg(msg):
     # Adding parsed message received to the board
     print "RECEIVED FROM LEADER"
     append_to_board(fetch_comment(msg))
-  # Got request ELECTION, sends message to election function
+  # Got request ELECTION, handling ongoing election
   elif request == "ELECTION":
     #print "Got election message"
     mycontext['electionLock'].acquire()
     handle_election(fetch_id(msg), fetch_ip(msg))
     mycontext['electionLock'].release()
+  # Got request CLOSINGELECTION, confirms leader and lets neighbour know
   elif request == "CLOSINGELECTION":
     mycontext['electionLock'].acquire()
     close_election(fetch_ip(msg))
@@ -163,6 +166,8 @@ def rec_msg(msg):
   # Got request BOARDUPDATE and I am leader, sends message to all slaves
   elif request == "BOARDUPDATE" and mycontext['hip'] == mycontext['ip']:
     print "RECEIVED FROM SLAVES"
+    # If the closing of an election is confirmed, send message to slaves.
+    # Otherwise add the message to the buffer
     if mycontext['electionClosed'] == True:
       send_to_slaves(fetch_comment(msg))
     else:
@@ -180,6 +185,9 @@ def send_msg(msg, ip, port):
   # Closing socket when message has been sent
   socketobject.close()
 
+# ------------------------------------------------------------------------------    
+# Initiates the election by sending to chosen ip with port
+# ------------------------------------------------------------------------------ 
 def initiate_election(ip, port):
   # Election control initiation
   mycontext['isElection'] = True
@@ -187,6 +195,9 @@ def initiate_election(ip, port):
   electionMsg = "ELECTION\nid=" + str(mycontext['id']) + "\nip=" + str(mycontext['ip'])
   send_msg(electionMsg, ip, port)
 
+# ------------------------------------------------------------------------------    
+# Handles an ongoing election by sending possibly higher id and ip to neighbour
+# ------------------------------------------------------------------------------ 
 def handle_election(receivedId, receivedIp):
   print "handle election"
   # Replace if the received id is higher than our currently saved highest id
@@ -194,13 +205,20 @@ def handle_election(receivedId, receivedIp):
     mycontext['hid'] = receivedId
     mycontext['hip'] = receivedIp
     print "Found higher id " + str(mycontext['hid']) + " at " + mycontext['hip']
+    # Sends updated highest id with ip to neighbour
     send_msg("ELECTION\nid=" + str(mycontext['hid']) + "\nip=" + str(mycontext['hip']), mycontext['ringNeighbour'], mycontext['port'])
-  # If the id and ip is the same as the saved id and ip, we have gone around the ring
-  # and returned to the current vessel as leader
+  # If the vessel received its own ip and the election is ongoing
   elif mycontext['ip'] == receivedIp and mycontext['isElection'] == True:
+    # Closing election for current vessel
     mycontext['isElection'] = False
+    # Start closing election by sending confirmation of closing the election
     send_msg("CLOSINGELECTION\nip=" + str(mycontext['hip']), mycontext['ringNeighbour'], mycontext['port'])
 
+# ------------------------------------------------------------------------------    
+# Closing election by sending a round of confirmation between all nodes exactly once
+# This sets the boolean electionClosed to True. Once the call has reached the leader again
+# the confirmation is over
+# ------------------------------------------------------------------------------ 
 def close_election(receivedIp):
   if mycontext['ip'] == receivedIp:
     print "closing election as leader"
@@ -211,13 +229,15 @@ def close_election(receivedIp):
   else:
     # Confirming leader and closing election for vessel
     mycontext['isElection'] = False
+    # Leader is confirmed
+    mycontext['electionClosed'] = True
     print "Leader confirmed as " + receivedIp + " and closing election"
+    # Sending a confirmation message to neighbour
     send_msg("CLOSINGELECTION\nip=" + str(mycontext['hip']), mycontext['ringNeighbour'], mycontext['port'])    
-    if mycontext['ip'] != mycontext['hip']:
-      # Leader is confirmed. Sending possible buffer to leader
-      print "Sending buffer to leader"
-      mycontext['electionClosed'] = True
-      send_buffer()
+    
+    print "Sending buffer to leader"
+    # Sending possible buffer to leader
+    send_buffer()
     
 # ------------------------------------------------------------------------------
 # Outputs the blackboard html 
