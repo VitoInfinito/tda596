@@ -1,6 +1,3 @@
-# TODO: BUFFER
-# TODO: Conc. script test
-
 # ------------------------------------------------------------------------------   
 # Start listening and handle incoming connections in board() function
 # ------------------------------------------------------------------------------   
@@ -40,12 +37,9 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       # Stopping communication
       stopcomm(thiscommhandle)
       # Sending parsed message to the board update function
-      if mycontext['isElection'] == False:
-        update_board(fetch_comment(msgheader))
-      else:
-        append_to_buffer(fetch_comment(msgheader))
+      update_board(fetch_comment(msgheader))
     else:
-    	rec_msg(msgheader)
+      rec_msg(msgheader)
 
   except Exception, e:
     stre = str(e)
@@ -96,9 +90,7 @@ def update_board(msg):
   # I am leader
   if mycontext['ip'] == mycontext['hip']:
     print "I am leader"
-    mycontext['boardLock'].acquire()
     send_to_slaves(msg)
-    mycontext['boardLock'].release()
   # I am not leader
   else:
     print "I am slave"
@@ -121,21 +113,12 @@ def send_to_slaves(msg):
       send_msg("LEADERUPDATE\ncomment=" + msg, ip, local_port)
 
 # ------------------------------------------------------------------------------    
-# Appends a message to the board
+# Appends a message to the board with respect to mutex
 # ------------------------------------------------------------------------------ 
 def append_to_board(msg):
+  mycontext['lock'].acquire()
   mycontext['board'].append(msg)
-
-# ------------------------------------------------------------------------------    
-# Appends a message to the buffer
-# ------------------------------------------------------------------------------ 
-def append_to_buffer(msg):
-  mycontext['buffer'].append(msg)
-
-def send_buffer():
-  for msg in mycontext['buffer']:
-    update_board(msg)
-  
+  mycontext['lock'].release()
 
 
 # ------------------------------------------------------------------------------    
@@ -152,27 +135,18 @@ def rec_msg(msg):
     append_to_board(fetch_comment(msg))
   # Got request ELECTION, sends message to election function
   elif request == "ELECTION":
-    #print "Got election message"
-    mycontext['electionLock'].acquire()
+    print "Got election message"
     handle_election(fetch_id(msg), fetch_ip(msg))
-    mycontext['electionLock'].release()
-  elif request == "CLOSINGELECTION":
-    mycontext['electionLock'].acquire()
-    close_election(fetch_ip(msg))
-    mycontext['electionLock'].release()
   # Got request BOARDUPDATE and I am leader, sends message to all slaves
   elif request == "BOARDUPDATE" and mycontext['hip'] == mycontext['ip']:
     print "RECEIVED FROM SLAVES"
-    if mycontext['electionClosed'] == True:
-      send_to_slaves(fetch_comment(msg))
-    else:
-      append_to_buffer(fetch_comment(msg))
+    send_to_slaves(fetch_comment(msg))
 
 # ------------------------------------------------------------------------------    
 # Called when we need to send a message to another node
 # ------------------------------------------------------------------------------ 
 def send_msg(msg, ip, port):
-  #print "Sending message to " + ip
+  print "Sending message to " + ip
   # Opening a socket connection to the chosen node
   socketobject = openconn(ip, port)
   # Sending a message over the opened connection
@@ -181,43 +155,29 @@ def send_msg(msg, ip, port):
   socketobject.close()
 
 def initiate_election(ip, port):
-  # Election control initiation
-  mycontext['isElection'] = True
   # Start by sending the vessels own message
   electionMsg = "ELECTION\nid=" + str(mycontext['id']) + "\nip=" + str(mycontext['ip'])
   send_msg(electionMsg, ip, port)
 
 def handle_election(receivedId, receivedIp):
-  print "handle election"
   # Replace if the received id is higher than our currently saved highest id
   if mycontext['hid'] < receivedId:
     mycontext['hid'] = receivedId
     mycontext['hip'] = receivedIp
-    print "Found higher id " + str(mycontext['hid']) + " at " + mycontext['hip']
+    print "Found higher id at " + mycontext['hip']
     send_msg("ELECTION\nid=" + str(mycontext['hid']) + "\nip=" + str(mycontext['hip']), mycontext['ringNeighbour'], mycontext['port'])
   # If the id and ip is the same as the saved id and ip, we have gone around the ring
   # and returned to the current vessel as leader
-  elif mycontext['ip'] == receivedIp and mycontext['isElection'] == True:
-    mycontext['isElection'] = False
-    send_msg("CLOSINGELECTION\nip=" + str(mycontext['hip']), mycontext['ringNeighbour'], mycontext['port'])
+  elif mycontext['id'] == receivedId and mycontext['ip'] == receivedIp:
+    # Letting the other vessels know that this vessel is the confirmed leader
+    #send_msg("LEADER\nid=" + mycontext['hid'] + "\nip=" + mycontext['hip'])
+    # Sending this out should be redundant
+    # We return from the function since we do not want to continue the election calls
+    return
 
-def close_election(receivedIp):
-  if mycontext['ip'] == receivedIp:
-    print "closing election as leader"
-    # Confirmed that everyone has received correct leader through election
-    mycontext['electionClosed'] = True
-    # Sending buffer out to slaves
-    send_buffer()
-  else:
-    # Confirming leader and closing election for vessel
-    mycontext['isElection'] = False
-    print "Leader confirmed as " + receivedIp + " and closing election"
-    send_msg("CLOSINGELECTION\nip=" + str(mycontext['hip']), mycontext['ringNeighbour'], mycontext['port'])    
-    if mycontext['ip'] != mycontext['hip']:
-      # Leader is confirmed. Sending possible buffer to leader
-      print "Sending buffer to leader"
-      mycontext['electionClosed'] = True
-      send_buffer()
+
+
+  #send_msg("ELECTION\nid=" + str(mycontext['hid']) + "\nip=" + str(mycontext['hip']), mycontext['hip'], mycontext['port'])
     
 # ------------------------------------------------------------------------------
 # Outputs the blackboard html 
@@ -298,20 +258,11 @@ if callfunc == 'initialize':
   # Initialize message board
   mycontext['board'] = []
 
-  # Initialize message buffer that takes care of messages while election is ongoing
-  mycontext['buffer'] = []
-
   # Initialize random ID and setting highest id found (hid) as it
-  mycontext['id'] = str(randomfloat())
-  mycontext['hid'] = mycontext['id']
-
-  # Election control initiation
-  mycontext['isElection'] = True
-  mycontext['electionClosed'] = False
+  mycontext['hid'] = mycontext['id'] = randomfloat()
 
   # Initialize lock to handle mutex
-  mycontext['boardLock'] = getlock()
-  mycontext['electionLock'] = getlock()
+  mycontext['lock'] = getlock()
 
   #read header and footer html files
   mycontext['headerhtml'] = file("header.html").read()
