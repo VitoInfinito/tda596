@@ -192,6 +192,7 @@ def send_msg(msg, ip, port):
 def initiate_election(ip, port):
   # Election control initiation
   mycontext['isElection'] = True
+  mycontext['electionClosed'] = False
   # Start by sending the vessels own message
   electionMsg = "ELECTION\nid=" + str(mycontext['id']) + "\nip=" + str(mycontext['ip'])
   send_msg(electionMsg, ip, port)
@@ -201,8 +202,18 @@ def initiate_election(ip, port):
 # ------------------------------------------------------------------------------ 
 def handle_election(receivedId, receivedIp):
   print "handle election"
+
+  # If there is no ongoing election, start it and call handle election again
+  # This is to ensure it is handled correctly (as if received during ongoing election)
+  if mycontext['isElection'] == False:
+    mycontext['isElection'] = True
+    mycontext['electionClosed'] = False
+    mycontext['hid'] = mycontext['id']
+    mycontext['hip'] = mycontext['ip']
+    handle_election(receivedId, receivedIp)
+  
   # Replace if the received id is higher than our currently saved highest id
-  if mycontext['hid'] < receivedId:
+  elif mycontext['hid'] < receivedId:
     mycontext['hid'] = receivedId
     mycontext['hip'] = receivedIp
     print "Found higher id " + str(mycontext['hid']) + " at " + mycontext['hip']
