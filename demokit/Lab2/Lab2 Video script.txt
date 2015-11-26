@@ -1,0 +1,33 @@
+This is Lab2 and we are group 25
+
+The leader election algo. has two phases. 
+Phase one consists of the actual election phase and phase two is the closing of the election.
+Phase two can also be considered to be a confirmation of the leader which will be explained shortly.
+
+Phase one works by one or several nodes sending an election message to the neighbour in the ring.
+Every time a node receives an election message it will either send the message to its next neighbour 
+if the received message is greater than what the node itself had saved as the currently known highest ID.
+Or it will ignore sending the message to the next node if the message received was lesser than what it itself knows
+being the highest ID. This will reduce a huge amount of messages.
+
+If not all nodes initiate the election, the system will still work because if a node receives an ongoing election message when it itself has no ongoing election
+it will start an election and send a message forward. This however brings us to phase two which is confirmation of the leader.
+Phase two starts when a node receives its own ip as being then highest ip known after which it sends out a closing of election message.
+Once the node receive that message again it knows that all nodes have confirmed it as leader and the election is over.
+
+During the election all nodes keep track of a buffer in case a node got a message posted. This message is sent after the node 
+has confirmed a leader and the leader itself waits until all nodes have confirmed before sending any received messages out to them.
+
+
+We use locks on both receiving of election messages and receving regular messages to ensure that all messages are sent out to all nodes in the correct order.
+*show something on screen*
+The cost is the amount of nodes in the network if a slave received the message first and the nodes minus one if the leader received the message first. This
+is because the receiving node always sends it to the leader first so that it gets sorted in the correct order in case several messages were sent at once.
+This is an easy way to ensure consistency with the boards.
+
+A pro of the election phase is that it has a lot fewer messages to go around which also puts less stress on the system to correct possible errors. 
+A con here would be that the system is not scalable and having a lot of slaves would mean that the leader could put a lot of message connections in queue before
+handling it making the process take much longer.
+A pro for the actual board is consistency. With this system we always ensure that all messages are displayed in the same order because of the locks used
+by the leader when receiving and sending the messages out. A con with the messages would be connectivity to the leader. All nodes may not be able to 
+hold a good connection to the leader making it difficult to ensure that they reach each other.
