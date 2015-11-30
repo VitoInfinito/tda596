@@ -1,0 +1,189 @@
+# ------------------------------------------------------------------------------   
+# Start listening and handle incoming connections in board() function
+# ------------------------------------------------------------------------------   
+def start_board():
+  ip = mycontext['ip']
+  port = mycontext['port']
+  print "Listening on IP " + str(ip) +" port " + str(port)
+
+  try: 
+    listencommhandle = waitforconn(ip,port,board)
+  except Exception, e:
+    print "Exception in start_board: %s, %s\n" %(type(e), e)
+    raise
+    #pass
+
+# ------------------------------------------------------------------------------    
+# Called when an incoming message is received. 
+# ------------------------------------------------------------------------------    
+def board(ip, port, sockobj, thiscommhandle, listencommhandle):
+  try:
+    msgheader = sockobj.recv(1024) # Receive message, 
+    # React depending on message type: HTTP GET or POST, or some other type of communication.
+    if msgheader.startswith( 'GET' ):
+      htmlresponse = generate_html_page()
+      sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
+      "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
+      stopcomm(thiscommhandle)   
+    elif msgheader.startswith( 'POST' ):
+      # Sending response to POST request
+      sockobj.send("HTTP/1.1 200 OK")
+      # Stopping communication
+      stopcomm(thiscommhandle)
+      # Sending parsed message to the board update function
+      update_board(fetch_comment(msgheader))
+    else:
+      rec_msg(msgheader)
+  except Exception, e:
+    stre = str(e)
+    if stre == "Socket closed" or stre == "timed out":
+      print "Socket error. Ignoring"
+      pass
+    else:
+      print "Exception in board: %s, %s\n" %(type(e), e)
+      raise
+
+# ------------------------------------------------------------------------------    
+# Called when we need to parse the comment out of a received message
+# ------------------------------------------------------------------------------ 
+def fetch_comment(msg):
+  return parse_line(msg, "comment=")
+
+# ------------------------------------------------------------------------------    
+# Called when we need to parse the id out of a received message
+# ------------------------------------------------------------------------------ 
+def fetch_id(msg):
+  return parse_line(msg, "id=")
+
+# ------------------------------------------------------------------------------    
+# Called when we need to parse the ip out of a received message
+# ------------------------------------------------------------------------------ 
+def fetch_ip(msg):
+  return parse_line(msg, "ip=")
+
+# ------------------------------------------------------------------------------    
+# Returns the first found string following search in lines
+# ------------------------------------------------------------------------------ 
+def parse_line(lines, searchfield):
+  for line in lines.split('\n'):
+    line_index = line.find(searchfield)
+    if line_index != -1:
+      return line[line_index+len(searchfield):]
+
+# ------------------------------------------------------------------------------    
+# Appends a message to the board
+# ------------------------------------------------------------------------------ 
+def append_to_board(msg):
+  mycontext['board'].append(msg)
+
+# ------------------------------------------------------------------------------    
+# Called when we have a message to update the board with
+# ------------------------------------------------------------------------------ 
+def update_board(msg):
+  # Locking board for further updates
+  mycontext['boardLock'].acquire()
+  # Adding the new message to the current board
+  mycontext['board'].append(msg)
+  local_port = mycontext['port']
+  for ip in mycontext['ipAddresses']:
+    # Checking if the ip is the machine we are on or not.
+    # Sending messages only to the other nodes in the network
+    if ip != mycontext['ip']:
+      send_msg(msg, ip, local_port)
+  # Releasing board lock
+  mycontext['boardLock'].release()
+
+# ------------------------------------------------------------------------------    
+# Called when we receive a message that is not POST or GET
+# ------------------------------------------------------------------------------ 
+def rec_msg(msg):
+  # Parsing out request and comment from message 
+  request = msg.split('\n', 1)[0]
+
+  # If message had request BOARDUPDATE, we received a new comment from another node
+  if request == "BOARDUPDATE":
+    # Adding message received to the board
+    append_to_board(fetch_comment(msg))
+
+# ------------------------------------------------------------------------------    
+# Called when we need to send a message to another node
+# ------------------------------------------------------------------------------ 
+def send_msg(msg, ip, port):
+  print "Sending message to " + ip
+  # Opening a socket connection to the chosen node
+  socketobject = openconn(ip, port)
+  # Sending a message over the opened connection
+  socketobject.send("BOARDUPDATE\ncomment=" + msg)
+  # Closing socket when message has been sent
+  socketobject.close()
+    
+# ------------------------------------------------------------------------------
+# Outputs the blackboard html 
+# Optional parameters are message and error which are introduced as headers into the html.
+# ------------------------------------------------------------------------------   
+def generate_html_page(status=""):
+  #Initialize blackboard content
+  
+  # Add messages to entry when loading page
+  entry = '<br>'.join(mycontext['board'])
+  content ='<div class="entry">%s</div>' %( entry )
+  
+  # dynamic title showing Ip address, port and up time.
+  board_title = '<div id="boardtitle_placeholder" class="boardtitle">Board contents at host: %s:%u, up time: %u sec.</div>' %(mycontext['ip'], mycontext['port'], int(getruntime()))  
+
+  # merging the contents of the board with the title
+  # and wrapping all with <div id="boardcontents_placeholder”>...</div>
+  content = '<div id="boardcontents_placeholder">%s%s</div>' %(board_title, content)   
+
+  # An optional status message
+  status_message = "<div class='status'>%s</div>" % (status)
+  
+  #Concatenate strings into huge string representing the final html
+  content = "".join([mycontext['headerhtml'], status_message, content, mycontext['footerhtml']])
+  
+  #print content
+  return content
+  
+# ------------------------------------------------------------------------------    
+# Main entry point of the program. Initalizes global variables in mycontext
+# and calls start_board() which opens the socket for incoming connections.
+# ------------------------------------------------------------------------------
+if callfunc == 'initialize':
+  # Running remotely (assuming that we pass one input argument only when we run remotely):
+  # whenever this vessel gets a connection on its IPaddress:Clearinghouseport it'll call function board
+  if len(callargs) == 1:
+    port = int(callargs[0])
+    ip = getmyip()
+
+  # To run locally: use the loopback ip address (127.0.0.1) and a port in the range 63100 .. 63110
+  # If you start multiple local instances using different ports, you can debug and test your code locally
+  # example:
+  # python ../demokit/repy.py ../demokit/restrictions.default skeleton2015advanced.repy 127.0.0.1 63100
+  elif len(callargs) == 2:
+    port = int(callargs[1])
+    ip = callargs[0]
+  
+  # Fail if we don't have 1 or 2 arguments  
+  else:
+    raise Exception("Specify a port only for auto detection of IP, or specify IP and port")
+
+  #Initialize Port and IP
+  mycontext['port'] = port
+  mycontext['ip'] = ip
+  
+  # Fetch the neighbouring nodes
+  mycontext['ipAddresses'] = []
+  for line in file("ipAddresses.txt"):
+    mycontext['ipAddresses'].append(line.strip())
+
+  # Initialize message board
+  mycontext['board'] = []
+
+  # Initialize lock to handle mutex
+  mycontext['boardLock'] = getlock()
+
+  #read header and footer html files
+  mycontext['headerhtml'] = file("header.html").read()
+  mycontext['footerhtml'] = file("footer.html").read()
+
+  start_board()
