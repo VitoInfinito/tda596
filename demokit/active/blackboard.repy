@@ -62,6 +62,12 @@ def fetch_ip(msg):
   return parse_line(msg, "ip=")
 
 # ------------------------------------------------------------------------------    
+# Called when we need to parse the sequence number out of a received message
+# ------------------------------------------------------------------------------ 
+def fetch_sequence(msg):
+  return parse_line(msg, "seq=")
+
+# ------------------------------------------------------------------------------    
 # Returns the first found string following search in lines
 # ------------------------------------------------------------------------------ 
 def parse_line(lines, searchfield):
@@ -74,6 +80,7 @@ def parse_line(lines, searchfield):
 # Appends a message to the board
 # ------------------------------------------------------------------------------ 
 def append_to_board(msg):
+  mycontext['boardSequence'] += 1
   mycontext['board'].append(msg)
 
 # ------------------------------------------------------------------------------    
@@ -82,8 +89,10 @@ def append_to_board(msg):
 def update_board(msg):
   # Locking board for further updates
   mycontext['boardLock'].acquire()
-  # Adding the new message to the current board
-  mycontext['board'].append(msg)
+  # Creating a new msseage object and append it to the board
+  msg = Message(msg, mycontext['boardSequence'], mycontext['ip'])
+  append_to_board(msg)
+  
   local_port = mycontext['port']
   for ip in mycontext['ipAddresses']:
     # Checking if the ip is the machine we are on or not.
@@ -103,7 +112,8 @@ def rec_msg(msg):
   # If message had request BOARDUPDATE, we received a new comment from another node
   if request == "BOARDUPDATE":
     # Adding message received to the board
-    append_to_board(fetch_comment(msg))
+    x = Message(fetch_comment(msg), fetch_sequence(msg), fetch_ip(msg))
+    append_to_board(x)
 
 # ------------------------------------------------------------------------------    
 # Called when we need to send a message to another node
@@ -113,9 +123,25 @@ def send_msg(msg, ip, port):
   # Opening a socket connection to the chosen node
   socketobject = openconn(ip, port)
   # Sending a message over the opened connection
-  socketobject.send("BOARDUPDATE\ncomment=" + msg)
+  msg = "BOARDUPDATE\n" + msg.parseObjectToString()
+  socketobject.send(msg)
   # Closing socket when message has been sent
   socketobject.close()
+
+class Message:
+  seq = ""
+  msg = ""
+  ip = ""
+
+  def __init__(self, msg="", seq=-1, ip=""):
+    self.seq = int(seq)
+    self.msg = msg
+    self.ip = ip
+    print self.parseObjectToString()
+
+  def parseObjectToString(self):
+    return "comment=" + self.msg + "\nseq=" + str(self.seq) + "\nip=" + self.ip
+
     
 # ------------------------------------------------------------------------------
 # Outputs the blackboard html 
@@ -125,7 +151,7 @@ def generate_html_page(status=""):
   #Initialize blackboard content
   
   # Add messages to entry when loading page
-  entry = '<br>'.join(mycontext['board'])
+  entry = '<br>'.join(["%s" % x.msg for x in mycontext['board']])
   content ='<div class="entry">%s</div>' %( entry )
   
   # dynamic title showing Ip address, port and up time.
@@ -178,6 +204,7 @@ if callfunc == 'initialize':
 
   # Initialize message board
   mycontext['board'] = []
+  mycontext['boardSequence'] = 0
 
   # Initialize lock to handle mutex
   mycontext['boardLock'] = getlock()
