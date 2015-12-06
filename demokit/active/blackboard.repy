@@ -80,8 +80,33 @@ def parse_line(lines, searchfield):
 # Appends a message to the board
 # ------------------------------------------------------------------------------ 
 def append_to_board(msg):
-  mycontext['boardSequence'] += 1
-  mycontext['board'].append(msg)
+  # If sequence exists in board and it is not identical to message there
+  # Can not have the same sequence ID if from the same ip with different messages
+  if msg.seq in mycontext['board'] and msg.ip != mycontext['board'][msg.seq].ip:
+    decide_order(msg, mycontext['board'][msg.seq])
+  else:
+    mycontext['board'][msg.seq] = msg
+    #mycontext['boardSequence'] += 1
+
+  #mycontext['board'].append(msg)
+
+# ------------------------------------------------------------------------------    
+# Decides order of messages on the board assuming the same sequence number appeared
+# Winner is chosen through highest IP and the other calls append_to_board to
+# recursively solve possibly new sequence errors and set the wrongly placed message correctly
+# ------------------------------------------------------------------------------ 
+def decide_order(msg1, msg2):
+  if msg1.ip > msg2.ip:
+    wrong_msg = msg2
+    correct_msg = msg1
+  else:
+    wrong_msg = msg1
+    correct_msg = msg2
+
+  mycontext['board'][correct_msg.seq] = correct_msg
+  wrong_msg.seq += 1
+  append_to_board(wrong_msg)
+
 
 # ------------------------------------------------------------------------------    
 # Called when we have a message to update the board with
@@ -90,7 +115,8 @@ def update_board(msg):
   # Locking board for further updates
   mycontext['boardLock'].acquire()
   # Creating a new msseage object and append it to the board
-  msg = Message(msg, mycontext['boardSequence'], mycontext['ip'])
+  #msg = Message(msg, mycontext['boardSequence'], mycontext['ip'])
+  msg = Message(msg, len(mycontext['board']), mycontext['ip'])
   append_to_board(msg)
   
   local_port = mycontext['port']
@@ -111,9 +137,11 @@ def rec_msg(msg):
 
   # If message had request BOARDUPDATE, we received a new comment from another node
   if request == "BOARDUPDATE":
+    mycontext['boardLock'].acquire()
     # Adding message received to the board
     x = Message(fetch_comment(msg), fetch_sequence(msg), fetch_ip(msg))
     append_to_board(x)
+    mycontext['boardLock'].release()
 
 # ------------------------------------------------------------------------------    
 # Called when we need to send a message to another node
@@ -143,6 +171,26 @@ class Message:
     return "comment=" + self.msg + "\nseq=" + str(self.seq) + "\nip=" + self.ip
 
     
+# ------------------------------------------------------------------------------    
+# Creates a list from the sequence numbers stored in the board dictionary by adding
+# the the items to a list in order of the sequence number until all items have been found
+# ------------------------------------------------------------------------------ 
+def board_to_ordered_list():
+  # Creates empty list as base
+  board_list = []
+  # Sets current sequence check at 0 (first possible)
+  current = 0
+  # Checks if all items have been added
+  while len(board_list) < len(mycontext['board']):
+    # If item exists in board dictionary, add it to the list
+    if mycontext['board'][current]:
+      board_list.append(mycontext['board'][current])
+
+    #Increment current to search next value
+    current += 1
+
+  return board_list
+
 # ------------------------------------------------------------------------------
 # Outputs the blackboard html 
 # Optional parameters are message and error which are introduced as headers into the html.
@@ -151,7 +199,7 @@ def generate_html_page(status=""):
   #Initialize blackboard content
   
   # Add messages to entry when loading page
-  entry = '<br>'.join(["%s" % x.msg for x in mycontext['board']])
+  entry = '<br>'.join(["%s" % x.msg for x in board_to_ordered_list()])
   content ='<div class="entry">%s</div>' %( entry )
   
   # dynamic title showing Ip address, port and up time.
@@ -203,7 +251,7 @@ if callfunc == 'initialize':
     mycontext['ipAddresses'].append(line.strip())
 
   # Initialize message board
-  mycontext['board'] = []
+  mycontext['board'] = {}
   mycontext['boardSequence'] = 0
 
   # Initialize lock to handle mutex
