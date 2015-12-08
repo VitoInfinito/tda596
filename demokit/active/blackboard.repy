@@ -87,9 +87,7 @@ def append_to_board(msg):
     decide_order(msg, mycontext['board'][msg.seq])
   else:
     mycontext['board'][msg.seq] = msg
-    #mycontext['boardSequence'] += 1
 
-  #mycontext['board'].append(msg)
 
 # ------------------------------------------------------------------------------    
 # Decides order of messages on the board assuming the same sequence number appeared
@@ -221,7 +219,6 @@ def generate_html_page(status=""):
   #Concatenate strings into huge string representing the final html
   content = "".join([mycontext['headerhtml'], status_message, content, mycontext['footerhtml']])
   
-  #print content
   return content
   
 # ------------------------------------------------------------------------------    
