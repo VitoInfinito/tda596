@@ -4,7 +4,7 @@ def printCurl(filename):
   filehandle = open(filename, "rt")
   i = 0;
   for line in filehandle:
-    curlString = 'curl --data "comment=' + str(i) + '" ' + "'" + line + "'"
+    curlString = 'curl --data "comment=' + str(i) + '" ' + "'" + line + "':63158"
 
     print curlString.replace("\n", "")
     i += 1

@@ -1,0 +1,25 @@
+========================================
+Running program: blackboard.repy
+Arguments: ['63158']
+========================================
+Listening on IP 130.217.77.4 port 63158
+Received message 0 at runtime 13.0736589432
+Finished message 2 at runtime 14.9882950783
+
+
+========================================
+Running program: blackboard.repy
+Arguments: ['63158']
+========================================
+Listening on IP 192.33.90.69 port 63158
+Received message 0 at runtime 12.8345930576
+Finished message 2 at runtime 15.3696510792
+
+
+========================================
+Running program: blackboard.repy
+Arguments: ['63158']
+========================================
+Listening on IP 195.113.161.84 port 63158
+Received message 0 at runtime 12.8152940273
+Finished message 2 at runtime 15.4102988243
