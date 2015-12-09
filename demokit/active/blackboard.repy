@@ -171,6 +171,9 @@ class Message:
     self.ip = ip
     print self.parseObjectToString()
 
+  # ------------------------------------------------------------------------------    
+  # Parses the object to a string with all variables in sequence
+  # ------------------------------------------------------------------------------ 
   def parseObjectToString(self):
     return "comment=" + self.msg + "\nseq=" + str(self.seq) + "\nip=" + self.ip
 
