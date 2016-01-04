@@ -72,6 +72,36 @@ def handle_request_add(msgheader, sockobj, thiscommhandle):
   
   # Send the page
   handle_request_get(msgheader, sockobj, thiscommhandle)
+
+# ------------------------------------------------------------------------------
+# Handles POST \Add request from browser
+# ------------------------------------------------------------------------------
+def handle_request_delete(msgheader, sockobj, thiscommhandle):
+  print "Received Delete"
+  
+  #increment logical clock
+  mycontext['ts'] = mycontext['ts'] + 1
+  
+  #check if valid request (contains comment)
+  #comment=msgheader.split('comment=')[1]
+  comment = fetch_comment(msgheader)
+  sequence = fetch_sequence(msgheader)
+
+  print comment
+  print sequence
+  # Mark the entry as Add, and store attributes
+  # We use the HTML query format to store the entries locally
+  # example:
+  # comment=aa&src_ts=2&src_ip=127.0.0.1&src_port=63101&action=Add
+  #entry = "comment=%s&src_ts=%u&src_ip=%s&src_port=%u&action=%s" % (comment, mycontext['ts'], mycontext['ip'], mycontext['port'], 'Add')
+  
+  #add_to_board(comment)
+
+  # Add to local store
+  #mycontext['entrieslist'].append(entry)
+  
+  # Send the page
+  handle_request_get(msgheader, sockobj, thiscommhandle)
   
 # ------------------------------------------------------------------------------
 # Handles POST /Change request from browser
@@ -177,24 +207,35 @@ def parse_line(lines, searchfield):
 # Utility function to wrap an entry with HTML form markup
 # ------------------------------------------------------------------------------
 def entry_to_html(entry):
-  if len(entry) > 0:
+  #if action == 'Add':
+  return '''<form class="entry" method="post" action="Change" >
+              <input type="text" name="comment" value="%s" size="50"/>
+              <input type="hidden" name="seq" value="%u" />
+              <input type="hidden" name="ip" value="%s" />
+              <input type="hidden" name="port" value="%u" />
+              <input type="submit" name="action" value="Modify" />
+              <input type="submit" name="action" value="Delete" />
+            </form>''' %(entry.msg, entry.seq, entry.ip, mycontext['port'])
+
+
+  #if len(entry) > 0:
     # extract the query parameters
-    parameters = extract_parameters_from_query(entry)
-    comment = parameters['comment']
-    action = parameters['action']
-    src_ts = int(parameters['src_ts'])
-    src_ip = parameters['src_ip']
-    src_port = int(parameters['src_port'])
-    
-    if action == 'Add':
-      return '''<form class="entry" method="post" action="Change" >
-                  <input type="text" name="comment" value="%s" size="50"/>
-                  <input type="hidden" name="ts" value="%u" />
-                  <input type="hidden" name="ip" value="%s" />
-                  <input type="hidden" name="port" value="%u" />
-                  <input type="submit" name="action" value="Modify" />
-                  <input type="submit" name="action" value="Delete" />
-                </form>''' %(comment, src_ts, src_ip, src_port)
+  #parameters = extract_parameters_from_query(entry)
+  #comment = parameters['comment']
+  #action = parameters['action']
+  #src_ts = int(parameters['src_ts'])
+  #src_ip = parameters['src_ip']
+  #src_port = int(parameters['src_port'])
+  
+  #if action == 'Add':
+    #return '''<form class="entry" method="post" action="Change" >
+     #           <input type="text" name="comment" value="%s" size="50"/>
+     #           <input type="hidden" name="ts" value="%u" />
+     #          <input type="hidden" name="ip" value="%s" />
+     #           <input type="hidden" name="port" value="%u" />
+     #           <input type="submit" name="action" value="Modify" />
+     #           <input type="submit" name="action" value="Delete" />
+     #         </form>''' %(comment, src_ts, src_ip, src_port)
   return "" 
        
 # ------------------------------------------------------------------------------
@@ -212,7 +253,7 @@ def generate_html_page(status=""):
   # convert entries to html
   #entries = [entry_to_html(e) for e in mycontext['board']]
   #entries = "".join(entries)
-  entries = '<br>'.join(["%s" % x.msg for x in board_to_ordered_list()])
+  entries = '<br>'.join([entry_to_html(x) for x in board_to_ordered_list()])
   
   # merging the contents of the board with the title
   # and wrapping all with <div id="boardcontents_placeholder”>...</div>
@@ -385,6 +426,7 @@ if callfunc == 'initialize':
 
   #Initialize board to hold future board entries
   mycontext['board'] = {}
+  mycontext['modQueue'] = {}
 
   # Initialize lock to handle mutex
   mycontext['boardLock'] = getlock()
