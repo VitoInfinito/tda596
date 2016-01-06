@@ -72,36 +72,6 @@ def handle_request_add(msgheader, sockobj, thiscommhandle):
   
   # Send the page
   handle_request_get(msgheader, sockobj, thiscommhandle)
-
-# ------------------------------------------------------------------------------
-# Handles POST \Add request from browser
-# ------------------------------------------------------------------------------
-def handle_request_delete(msgheader, sockobj, thiscommhandle):
-  print "Received Delete"
-  
-  #increment logical clock
-  mycontext['ts'] = mycontext['ts'] + 1
-  
-  #check if valid request (contains comment)
-  #comment=msgheader.split('comment=')[1]
-  comment = fetch_comment(msgheader)
-  sequence = fetch_sequence(msgheader)
-
-  print comment
-  print sequence
-  # Mark the entry as Add, and store attributes
-  # We use the HTML query format to store the entries locally
-  # example:
-  # comment=aa&src_ts=2&src_ip=127.0.0.1&src_port=63101&action=Add
-  #entry = "comment=%s&src_ts=%u&src_ip=%s&src_port=%u&action=%s" % (comment, mycontext['ts'], mycontext['ip'], mycontext['port'], 'Add')
-  
-  #add_to_board(comment)
-
-  # Add to local store
-  #mycontext['entrieslist'].append(entry)
-  
-  # Send the page
-  handle_request_get(msgheader, sockobj, thiscommhandle)
   
 # ------------------------------------------------------------------------------
 # Handles POST /Change request from browser
@@ -116,23 +86,32 @@ def handle_request_change(msgheader, sockobj, thiscommhandle):
   query = extract_http_request_contents(msgheader)
   # extract the query parameters
   parameters = extract_parameters_from_query(query)
-  print parameters
+  #print parameters
   comment = parameters['comment']
   action = parameters['action']
-  ref_ts = int(parameters['ts'])
+  ref_ts = int(parameters['seq'])
   ref_ip = parameters['ip']
   ref_port = int(parameters['port'])
+  #comment = fetch_comment(msgheader)
+  #action = fetch_action(msgheader)
+  #ref_ts = fetch_sequence(msgheader)
+  #ref_ip = fetch_ip(msgheader)
+  #ref_port = mycontext['port']
   
-  print comment, action, ref_ts, ref_ip, ref_port
+  print comment
+  print action
+  print ref_ts
+  print ref_ip
+  print ref_port
 
   # Process the query
   # TODO ...
    
   # Save the src ip/port and timestamp of the query
-  entry = "%s&src_ts=%u&src_ip=%s&src_port=%u" % (query, mycontext['ts'], mycontext['ip'], mycontext['port'])
+  #entry = "%s&src_ts=%u&src_ip=%s&src_port=%u" % (query, mycontext['ts'], mycontext['ip'], mycontext['port'])
 
   # Add query to local store
-  mycontext['board'].append(entry)
+  #mycontext['board'].append(entry)
   
   #Send the page
   handle_request_get(msgheader, sockobj, thiscommhandle)
@@ -195,6 +174,12 @@ def fetch_sequence(msg):
   return parse_line(msg, "seq=")
 
 # ------------------------------------------------------------------------------    
+# Called when we need to parse the action out of a received message
+# ------------------------------------------------------------------------------ 
+def fetch_action(msg):
+  return parse_line(msg, "action=")
+
+# ------------------------------------------------------------------------------    
 # Returns the first found string following search in lines
 # ------------------------------------------------------------------------------ 
 def parse_line(lines, searchfield):
@@ -207,7 +192,6 @@ def parse_line(lines, searchfield):
 # Utility function to wrap an entry with HTML form markup
 # ------------------------------------------------------------------------------
 def entry_to_html(entry):
-  #if action == 'Add':
   return '''<form class="entry" method="post" action="Change" >
               <input type="text" name="comment" value="%s" size="50"/>
               <input type="hidden" name="seq" value="%u" />
@@ -216,27 +200,6 @@ def entry_to_html(entry):
               <input type="submit" name="action" value="Modify" />
               <input type="submit" name="action" value="Delete" />
             </form>''' %(entry.msg, entry.seq, entry.ip, mycontext['port'])
-
-
-  #if len(entry) > 0:
-    # extract the query parameters
-  #parameters = extract_parameters_from_query(entry)
-  #comment = parameters['comment']
-  #action = parameters['action']
-  #src_ts = int(parameters['src_ts'])
-  #src_ip = parameters['src_ip']
-  #src_port = int(parameters['src_port'])
-  
-  #if action == 'Add':
-    #return '''<form class="entry" method="post" action="Change" >
-     #           <input type="text" name="comment" value="%s" size="50"/>
-     #           <input type="hidden" name="ts" value="%u" />
-     #          <input type="hidden" name="ip" value="%s" />
-     #           <input type="hidden" name="port" value="%u" />
-     #           <input type="submit" name="action" value="Modify" />
-     #           <input type="submit" name="action" value="Delete" />
-     #         </form>''' %(comment, src_ts, src_ip, src_port)
-  return "" 
        
 # ------------------------------------------------------------------------------
 # Outputs the blackboard html 
