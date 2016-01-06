@@ -55,7 +55,7 @@ def handle_request_add(msgheader, sockobj, thiscommhandle):
   print "Received Add"
   
   #increment logical clock
-  mycontext['ts'] = mycontext['ts'] + 1
+  #mycontext['ts'] = mycontext['ts'] + 1
   
   #check if valid request (contains comment)
   comment=msgheader.split('comment=')[1]
@@ -80,7 +80,7 @@ def handle_request_change(msgheader, sockobj, thiscommhandle):
   print "Received POST /Change"
 
   #increment logical clock
-  mycontext['ts'] = mycontext['ts'] + 1
+  #mycontext['ts'] = mycontext['ts'] + 1
 
   #extract the query from the HTTP request  
   query = extract_http_request_contents(msgheader)
@@ -104,6 +104,10 @@ def handle_request_change(msgheader, sockobj, thiscommhandle):
   print ref_ip
   print ref_port
 
+
+  if action == 'Delete':
+    deleteMessage(ref_ts, ref_ip)
+
   # Process the query
   # TODO ...
    
@@ -115,6 +119,19 @@ def handle_request_change(msgheader, sockobj, thiscommhandle):
   
   #Send the page
   handle_request_get(msgheader, sockobj, thiscommhandle)
+
+# ------------------------------------------------------------------------------
+# Function for handling deleting of messages
+# ------------------------------------------------------------------------------
+def deleteMessage(ref_ts, ref_ip):
+  #del mycontext['board'][ref_ts]
+  if ref_ts in mycontext['board'] and mycontext['board'][ref_ts].ip == ref_ip:
+    # Settings state of message to deleted (This makes for easier control if several
+    # delete actions were made concurrently and for future implementations if user would want to
+    # be able to bring back a deleted message)
+    mycontext['board'][ref_ts].state = "deleted"
+
+
   
 # ------------------------------------------------------------------------------
 # Wrap into HTTP headers
@@ -266,8 +283,9 @@ def add_to_board(msg):
   mycontext['boardLock'].acquire()
   # Creating a new msseage object and append it to the board
   #msg = Message(msg, mycontext['boardSequence'], mycontext['ip'])
-  msg = Message(msg, len(mycontext['board']), mycontext['ip'])
+  msg = Message(msg, mycontext['ts'], mycontext['ip'])
   append_to_board(msg)
+  #mycontext['ts'] += 1
   # Releasing board lock
   mycontext['boardLock'].release()
   
@@ -290,6 +308,8 @@ def append_to_board(msg):
     print "Wrong order found for message " + msg.msg
     decide_order(msg, mycontext['board'][msg.seq])
   else:
+    # Increment logical clock
+    mycontext['ts'] += 1
     mycontext['board'][msg.seq] = msg
 
 # ------------------------------------------------------------------------------    
@@ -313,11 +333,13 @@ class Message:
   seq = ""
   msg = ""
   ip = ""
+  state = ""
 
   def __init__(self, msg="", seq=-1, ip=""):
     self.seq = int(seq)
     self.msg = msg
     self.ip = ip
+    state = "active"
     print self.parseObjectToString()
 
   # ------------------------------------------------------------------------------    
@@ -328,22 +350,25 @@ class Message:
 
 # ------------------------------------------------------------------------------    
 # Creates a list from the sequence numbers stored in the board dictionary by adding
-# the the items to a list in order of the sequence number until all items have been found
+# the the items to a list in order of the sequence number until all items have been found.
+# Ignores all items set to deleted state
 # ------------------------------------------------------------------------------ 
 def board_to_ordered_list():
   # Creates empty list as base
   board_list = []
   # Sets current sequence check at 0 (first possible)
   current = 0
+  maximum = len(mycontext['board'])
   # Checks if all items have been added
-  while len(board_list) < len(mycontext['board']):
+  print "1"
+  while len(board_list) < maximum:
+    print "2"
     # If item exists in board dictionary, add it to the list
-    if mycontext['board'][current]:
+    if current in mycontext['board']:
       board_list.append(mycontext['board'][current])
 
     #Increment current to search next value
     current += 1
-
   return board_list
   
 # ------------------------------------------------------------------------------    
