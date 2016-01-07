@@ -106,7 +106,7 @@ def handle_request_change(msgheader, sockobj, thiscommhandle):
 
 
   if action == 'Delete':
-    deleteMessage(ref_ts, ref_ip)
+    deleteMessage(ref_ts, ref_ip, ref_port)
 
   # Process the query
   # TODO ...
@@ -123,13 +123,20 @@ def handle_request_change(msgheader, sockobj, thiscommhandle):
 # ------------------------------------------------------------------------------
 # Function for handling deleting of messages
 # ------------------------------------------------------------------------------
-def deleteMessage(ref_ts, ref_ip):
+def deleteMessage(ref_ts, ref_ip, ref_port):
   #del mycontext['board'][ref_ts]
   if ref_ts in mycontext['board'] and mycontext['board'][ref_ts].ip == ref_ip:
     # Settings state of message to deleted (This makes for easier control if several
     # delete actions were made concurrently and for future implementations if user would want to
     # be able to bring back a deleted message)
     mycontext['board'][ref_ts].state = "deleted"
+
+    local_port = mycontext['port']
+    for ip in mycontext['ipAddresses']:
+      # Checking if the ip is the machine we are on or not.
+      # Sending messages only to the other nodes in the network
+      if ip != mycontext['ip']:
+        send_msg(mycontext['board'][ref_ts], "DELETEMESSAGE", ip, local_port)
 
 
   
@@ -251,6 +258,7 @@ def rec_msg(msg):
   # Parsing out request and comment from message 
   request = msg.split('\n', 1)[0]
 
+  print "Received " + request
   # If message had request BOARDUPDATE, we received a new comment from another node
   if request == "BOARDUPDATE":
     print "Received message " + fetch_comment(msg) + " at runtime " + str(getruntime())
@@ -260,16 +268,24 @@ def rec_msg(msg):
     append_to_board(x)
     mycontext['boardLock'].release()
     print "Finished message " + fetch_comment(msg) + " at runtime " + str(getruntime())
+  elif request == "DELETEMESSAGE":
+    # Setting state of message to deleted
+    #comment = fetch_comment(msg)
+    seq = int(fetch_sequence(msg))
+    ip = fetch_ip(msg)
+
+    if seq in mycontext['board'] and mycontext['board'][seq].ip == ip:
+      mycontext['board'][seq].state = "deleted"
 
 # ------------------------------------------------------------------------------    
 # Called when we need to send a message to another node
 # ------------------------------------------------------------------------------ 
-def send_msg(msg, ip, port):
+def send_msg(msg, header, ip, port):
   print "Sending message to " + ip
   # Opening a socket connection to the chosen node
   socketobject = openconn(ip, port)
   # Sending a message over the opened connection
-  msg = "BOARDUPDATE\n" + msg.parseObjectToString()
+  msg = header + "\n" + msg.parseObjectToString()
   socketobject.send(msg)
   # Closing socket when message has been sent
   socketobject.close()
@@ -294,7 +310,7 @@ def add_to_board(msg):
     # Checking if the ip is the machine we are on or not.
     # Sending messages only to the other nodes in the network
     if ip != mycontext['ip']:
-      send_msg(msg, ip, local_port)
+      send_msg(msg, "BOARDUPDATE", ip, local_port)
   
   print "Finished message " + msg.msg + " at runtime " + str(getruntime())
 
@@ -339,14 +355,14 @@ class Message:
     self.seq = int(seq)
     self.msg = msg
     self.ip = ip
-    state = "active"
+    self.state = "active"
     print self.parseObjectToString()
 
   # ------------------------------------------------------------------------------    
   # Parses the object to a string with all variables in sequence
   # ------------------------------------------------------------------------------ 
   def parseObjectToString(self):
-    return "comment=" + self.msg + "\nseq=" + str(self.seq) + "\nip=" + self.ip
+    return "comment=" + self.msg + "\nseq=" + str(self.seq) + "\nip=" + self.ip + "\nstate=" + self.state
 
 # ------------------------------------------------------------------------------    
 # Creates a list from the sequence numbers stored in the board dictionary by adding
@@ -360,12 +376,16 @@ def board_to_ordered_list():
   current = 0
   maximum = len(mycontext['board'])
   # Checks if all items have been added
-  print "1"
   while len(board_list) < maximum:
-    print "2"
     # If item exists in board dictionary, add it to the list
     if current in mycontext['board']:
-      board_list.append(mycontext['board'][current])
+      print mycontext['board'][current].state
+      # If state is active, we append it to the board. Otherwise remove one item from checking and
+      # move to next
+      if mycontext['board'][current].state == 'active':
+        board_list.append(mycontext['board'][current])
+      else:
+        maximum -= 1
 
     #Increment current to search next value
     current += 1
