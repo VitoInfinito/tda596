@@ -24,7 +24,6 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
     
     # React depending on message type: HTTP GET or POST, or some other type of communication.
     if msgheader.startswith( 'GET' ):
-      print "Received GET"
       handle_request_get(msgheader, sockobj, thiscommhandle)
     elif msgheader.startswith( 'POST /Add' ):
       handle_request_add(msgheader, sockobj, thiscommhandle)
@@ -53,22 +52,11 @@ def handle_request_get(msgheader, sockobj, thiscommhandle):
 # ------------------------------------------------------------------------------
 def handle_request_add(msgheader, sockobj, thiscommhandle):
   print "Received Add"
-  
-  #increment logical clock
-  #mycontext['ts'] = mycontext['ts'] + 1
-  
   #check if valid request (contains comment)
   comment=msgheader.split('comment=')[1]
-  # Mark the entry as Add, and store attributes
-  # We use the HTML query format to store the entries locally
-  # example:
-  # comment=aa&src_ts=2&src_ip=127.0.0.1&src_port=63101&action=Add
-  #entry = "comment=%s&src_ts=%u&src_ip=%s&src_port=%u&action=%s" % (comment, mycontext['ts'], mycontext['ip'], mycontext['port'], 'Add')
-  
-  add_to_board(comment)
 
-  # Add to local store
-  #mycontext['entrieslist'].append(entry)
+  #Add comment to board message
+  add_to_board(comment)
   
   # Send the page
   handle_request_get(msgheader, sockobj, thiscommhandle)
@@ -78,7 +66,7 @@ def handle_request_add(msgheader, sockobj, thiscommhandle):
 # ------------------------------------------------------------------------------
 def handle_request_change(msgheader, sockobj, thiscommhandle):
   print "Received POST /Change"
-
+  mycontext['boardLock'].acquire()
   #increment logical clock
   #mycontext['ts'] = mycontext['ts'] + 1
 
@@ -86,36 +74,17 @@ def handle_request_change(msgheader, sockobj, thiscommhandle):
   query = extract_http_request_contents(msgheader)
   # extract the query parameters
   parameters = extract_parameters_from_query(query)
-  #print parameters
   comment = parameters['comment']
   action = parameters['action']
   ref_ts = int(parameters['seq'])
   ref_ip = parameters['ip']
   ref_port = int(parameters['port'])
-  #comment = fetch_comment(msgheader)
-  #action = fetch_action(msgheader)
-  #ref_ts = fetch_sequence(msgheader)
-  #ref_ip = fetch_ip(msgheader)
-  #ref_port = mycontext['port']
-  
-  print comment
-  print action
-  print ref_ts
-  print ref_ip
-  print ref_port
 
-
+  #If action is delete, send information to function deleteMessage
   if action == 'Delete':
     deleteMessage(ref_ts, ref_ip, ref_port)
 
-  # Process the query
-  # TODO ...
-   
-  # Save the src ip/port and timestamp of the query
-  #entry = "%s&src_ts=%u&src_ip=%s&src_port=%u" % (query, mycontext['ts'], mycontext['ip'], mycontext['port'])
-
-  # Add query to local store
-  #mycontext['board'].append(entry)
+  mycontext['boardLock'].release()
   
   #Send the page
   handle_request_get(msgheader, sockobj, thiscommhandle)
@@ -124,7 +93,6 @@ def handle_request_change(msgheader, sockobj, thiscommhandle):
 # Function for handling deleting of messages
 # ------------------------------------------------------------------------------
 def deleteMessage(ref_ts, ref_ip, ref_port):
-  #del mycontext['board'][ref_ts]
   if ref_ts in mycontext['board'] and mycontext['board'][ref_ts].ip == ref_ip:
     # Settings state of message to deleted (This makes for easier control if several
     # delete actions were made concurrently and for future implementations if user would want to
@@ -258,7 +226,6 @@ def rec_msg(msg):
   # Parsing out request and comment from message 
   request = msg.split('\n', 1)[0]
 
-  print "Received " + request
   # If message had request BOARDUPDATE, we received a new comment from another node
   if request == "BOARDUPDATE":
     print "Received message " + fetch_comment(msg) + " at runtime " + str(getruntime())
@@ -271,11 +238,26 @@ def rec_msg(msg):
   elif request == "DELETEMESSAGE":
     # Setting state of message to deleted
     #comment = fetch_comment(msg)
+    mycontext['boardLock'].acquire()
     seq = int(fetch_sequence(msg))
     ip = fetch_ip(msg)
 
-    if seq in mycontext['board'] and mycontext['board'][seq].ip == ip:
-      mycontext['board'][seq].state = "deleted"
+    if seq in mycontext['board']:
+      if mycontext['board'][seq].ip == ip:
+        mycontext['board'][seq].state = "deleted"
+    else:
+      # Creating an empty message with state set to deleted to compensate since the message
+      # did not arrive before the message was deleted on this vessel
+      x = Message("", fetch_sequence(msg), ip)
+      append_to_board(x)
+    mycontext['boardLock'].release()
+
+# ------------------------------------------------------------------------------    
+# Called when broadcasting a message to other vessels
+# ------------------------------------------------------------------------------ 
+def broadcast(msg, header, port):
+  return 0
+
 
 # ------------------------------------------------------------------------------    
 # Called when we need to send a message to another node
@@ -326,7 +308,12 @@ def append_to_board(msg):
   else:
     # Increment logical clock
     mycontext['ts'] += 1
-    mycontext['board'][msg.seq] = msg
+    # If message had been set to deleted earlier, we simply update the message in it
+    if msg.seq in mycontext['board'] and mycontext['board'][seq].state == 'deleted':
+      mycontext['board'].msg = fetch_comment(msg)
+    else:
+      mycontext['board'][msg.seq] = msg
+
 
 # ------------------------------------------------------------------------------    
 # Decides order of messages on the board assuming the same sequence number appeared
@@ -379,9 +366,8 @@ def board_to_ordered_list():
   while len(board_list) < maximum:
     # If item exists in board dictionary, add it to the list
     if current in mycontext['board']:
-      print mycontext['board'][current].state
-      # If state is active, we append it to the board. Otherwise remove one item from checking and
-      # move to next
+      # If state is active, we append it to the board. 
+      # Otherwise remove one item from checking and move to next
       if mycontext['board'][current].state == 'active':
         board_list.append(mycontext['board'][current])
       else:
@@ -423,6 +409,23 @@ if callfunc == 'initialize':
   mycontext['ipAddresses'] = []
   for line in file("ipAddresses.txt"):
     mycontext['ipAddresses'].append(line.strip())
+
+  # Bridge ip is acting as a connector between the two groups.
+  mycontext['bridgeIp'] = mycontext['ipAddresses'][0]
+  print "Bridge IP is " + mycontext['bridgeIp']
+
+  # List of ip adresses belonging to the same group.
+  # The groups are always in two sets with half in each (1 more in first if uneven amount)
+  # Calculating amount in first group by rounding the divison
+  amountInFirstGroup = int(round(len(mycontext['ipAddresses'])/2.0))
+  print "First group contains: " + str(amountInFirstGroup)
+  if mycontext['ipAddresses'].index(ip) >= amountInFirstGroup:
+    mycontext['group'] = mycontext['ipAddresses'][amountInFirstGroup:]
+  else:
+    mycontext['group'] = mycontext['ipAddresses'][:amountInFirstGroup]
+
+  print "My group contains " + str(mycontext['group'])
+
   
   #Initialize Port and IP
   mycontext['port'] = port
