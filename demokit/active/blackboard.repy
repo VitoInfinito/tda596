@@ -99,12 +99,8 @@ def deleteMessage(ref_ts, ref_ip, ref_port):
     # be able to bring back a deleted message)
     mycontext['board'][ref_ts].state = "deleted"
 
-    local_port = mycontext['port']
-    for ip in mycontext['ipAddresses']:
-      # Checking if the ip is the machine we are on or not.
-      # Sending messages only to the other nodes in the network
-      if ip != mycontext['ip']:
-        send_msg(mycontext['board'][ref_ts], "DELETEMESSAGE", ip, local_port)
+    # Broadcasting the message
+    broadcast(mycontext['board'][ref_ts], "DELETEMESSAGE", mycontext['port'])
 
 
   
@@ -256,7 +252,11 @@ def rec_msg(msg):
 # Called when broadcasting a message to other vessels
 # ------------------------------------------------------------------------------ 
 def broadcast(msg, header, port):
-  return 0
+  for ip in mycontext['ipAddresses']:
+      # Checking if the ip is the machine we are on or not.
+      # Sending messages only to the other nodes in the network
+      if ip != mycontext['ip']:
+        send_msg(msg, header, ip, port)
 
 
 # ------------------------------------------------------------------------------    
@@ -280,20 +280,12 @@ def add_to_board(msg):
   # Locking board for further updates
   mycontext['boardLock'].acquire()
   # Creating a new msseage object and append it to the board
-  #msg = Message(msg, mycontext['boardSequence'], mycontext['ip'])
   msg = Message(msg, mycontext['ts'], mycontext['ip'])
   append_to_board(msg)
-  #mycontext['ts'] += 1
   # Releasing board lock
   mycontext['boardLock'].release()
   
-  local_port = mycontext['port']
-  for ip in mycontext['ipAddresses']:
-    # Checking if the ip is the machine we are on or not.
-    # Sending messages only to the other nodes in the network
-    if ip != mycontext['ip']:
-      send_msg(msg, "BOARDUPDATE", ip, local_port)
-  
+  broadcast(msg, "BOARDUPDATE", mycontext['port'])
   print "Finished message " + msg.msg + " at runtime " + str(getruntime())
 
 # ------------------------------------------------------------------------------    
