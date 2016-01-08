@@ -29,6 +29,8 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       handle_request_add(msgheader, sockobj, thiscommhandle)
     elif msgheader.startswith( 'POST /Change' ):
       handle_request_change(msgheader, sockobj, thiscommhandle)
+    elif msgheader.startswith( 'POST /Grouping' ):
+      handle_request_grouping(msgheader, sockobj, thiscommhandle)
     else:
       rec_msg(msgheader)
   except Exception, e:
@@ -67,8 +69,6 @@ def handle_request_add(msgheader, sockobj, thiscommhandle):
 def handle_request_change(msgheader, sockobj, thiscommhandle):
   print "Received POST /Change"
   mycontext['boardLock'].acquire()
-  #increment logical clock
-  #mycontext['ts'] = mycontext['ts'] + 1
 
   #extract the query from the HTTP request  
   query = extract_http_request_contents(msgheader)
@@ -83,11 +83,56 @@ def handle_request_change(msgheader, sockobj, thiscommhandle):
   #If action is delete, send information to function deleteMessage
   if action == 'Delete':
     deleteMessage(ref_ts, ref_ip, ref_port)
+  elif action == 'Split' or action == 'Merged':
+    split_merge(action)
 
   mycontext['boardLock'].release()
   
   #Send the page
   handle_request_get(msgheader, sockobj, thiscommhandle)
+
+# ------------------------------------------------------------------------------
+# Handles POST /Grouping request from browser
+# ------------------------------------------------------------------------------
+def handle_request_grouping(msgheader, sockobj, thiscommhandle):
+  print "Received POST /Grouping"
+
+  #extract the query from the HTTP request  
+  query = extract_http_request_contents(msgheader)
+  # extract the query parameters
+  parameters = extract_parameters_from_query(query)
+  action = parameters['action']
+  split_merge(parameters['action'])
+  #Send the page
+  handle_request_get(msgheader, sockobj, thiscommhandle)
+
+# ------------------------------------------------------------------------------
+# Function for splitting and merging groups
+# ------------------------------------------------------------------------------
+def split_merge(action):
+  # If groups were split
+  if action == 'Split':
+    mycontext['split_merge'] = 'Merged'
+  else:
+    mycontext['split_merge'] = 'Split'
+    # Keeping track of when split occured
+    mycontext['merge_count'] = mycontext['ts']
+
+  broadcast("comment=" + mycontext['split_merge'], "GROUPING", mycontext['port'], mycontext['ipAddresses'])
+
+  # If groups were merged again, send all lost messages to other group and request theirs
+  if mycontext['split_merge'] == 'Merged':
+    print "Bridge is merging"
+    while mycontext['merge_count'] < mycontext['ts']:
+      if mycontext['merge_count'] in mycontext['board']:
+        # Broadcast to all ip not in my group
+        broadcast(mycontext['board'][mycontext['merge_count']], "BOARDUPDATE", mycontext['port'], [x for x in mycontext['ipAddresses'] if x not in mycontext['group']])
+        mycontext['merge_count'] += 1
+
+    # Requesting first vessel in other group to send its messages to first group
+    send_msg("", "MESSAGEREQUEST", [x for x in mycontext['ipAddresses'] if x not in mycontext['group']][0], mycontext['port'])
+  
+
 
 # ------------------------------------------------------------------------------
 # Function for handling deleting of messages
@@ -100,7 +145,7 @@ def deleteMessage(ref_ts, ref_ip, ref_port):
     mycontext['board'][ref_ts].state = "deleted"
 
     # Broadcasting the message
-    broadcast(mycontext['board'][ref_ts], "DELETEMESSAGE", mycontext['port'])
+    group_broadcast(mycontext['board'][ref_ts], "DELETEMESSAGE", mycontext['port'])
 
 
   
@@ -168,6 +213,12 @@ def fetch_action(msg):
   return parse_line(msg, "action=")
 
 # ------------------------------------------------------------------------------    
+# Called when we need to parse the state out of a received message
+# ------------------------------------------------------------------------------ 
+def fetch_state(msg):
+  return parse_line(msg, "state=")
+
+# ------------------------------------------------------------------------------    
 # Returns the first found string following search in lines
 # ------------------------------------------------------------------------------ 
 def parse_line(lines, searchfield):
@@ -198,6 +249,13 @@ def generate_html_page(status=""):
   
   # dynamic title showing Ip address, port and up time.
   board_title = '<div id="boardtitle_placeholder" class="boardtitle">Board contents at host: %s:%u, up time: %u sec.</div>' %(mycontext['ip'], mycontext['port'], int(getruntime()))  
+
+  if mycontext['ip'] == mycontext['bridgeIp']:
+    grouping_button = '''Current state is <form class="entry" method="post" action="Grouping" >
+                        <input type="submit" name="action" value="%s" />''' %(mycontext['split_merge'])
+  else:
+    grouping_button = 'Current state is ' + mycontext['split_merge']
+
   # An optional status message
   status_message = "<div class='status'>%s</div>" % (status)
   
@@ -208,7 +266,7 @@ def generate_html_page(status=""):
   
   # merging the contents of the board with the title
   # and wrapping all with <div id="boardcontents_placeholder”>...</div>
-  content = [mycontext['headerhtml'], '<div id="boardcontents_placeholder">', board_title, status_message, entries, '</div>', mycontext['footerhtml']]   
+  content = [mycontext['headerhtml'], '<div id="boardcontents_placeholder">', board_title, grouping_button, status_message, entries, '</div>', mycontext['footerhtml']]   
   
   #Concatenate strings into huge string representing the final html
   content = "".join(content)
@@ -222,12 +280,19 @@ def rec_msg(msg):
   # Parsing out request and comment from message 
   request = msg.split('\n', 1)[0]
 
+  # If I am the bridge ip, relay message to other group
+  # And the group is not splitv
+  if mycontext['ip'] == mycontext['bridgeIp'] and mycontext['split_merge'] == 'Merged':
+    print "I am bridge and will relay message"
+    x = Message(fetch_comment(msg), fetch_sequence(msg), fetch_ip(msg), fetch_state(msg))
+    bridge_broadcast(x, request, mycontext['port'])
+
   # If message had request BOARDUPDATE, we received a new comment from another node
   if request == "BOARDUPDATE":
     print "Received message " + fetch_comment(msg) + " at runtime " + str(getruntime())
     mycontext['boardLock'].acquire()
     # Adding message received to the board
-    x = Message(fetch_comment(msg), fetch_sequence(msg), fetch_ip(msg))
+    x = Message(fetch_comment(msg), fetch_sequence(msg), fetch_ip(msg), fetch_state(msg))
     append_to_board(x)
     mycontext['boardLock'].release()
     print "Finished message " + fetch_comment(msg) + " at runtime " + str(getruntime())
@@ -244,33 +309,91 @@ def rec_msg(msg):
     else:
       # Creating an empty message with state set to deleted to compensate since the message
       # did not arrive before the message was deleted on this vessel
-      x = Message("", fetch_sequence(msg), ip)
+      x = Message("", fetch_sequence(msg), ip, "deleted")
       append_to_board(x)
     mycontext['boardLock'].release()
+  elif request == "GROUPING":
+    # Sets splitting or merging state of the groups
+    mycontext['split_merge'] = fetch_comment(msg)
+    # If groups are split, set a timestamp
+    if mycontext['split_merge'] == 'Split':
+      mycontext['merge_count'] = mycontext['ts']
+  elif request == "MESSAGEREQUEST":
+    # Called when bridge is requesting a message recap after merging
+    while mycontext['merge_count'] < mycontext['ts']:
+      if mycontext['merge_count'] in mycontext['board']:
+        bridge_broadcast(mycontext['board']['merge_count'], "BOARDUPDATE", mycontext['port'])
+        mycontext['merge_count'] += 1
+
+# ------------------------------------------------------------------------------    
+# Called when broadcasting messages to group
+# ------------------------------------------------------------------------------ 
+def group_broadcast(msg, header, port):
+  # If bridge, send to all. Otherwise send to group
+  if mycontext['ip'] == mycontext['bridgeIp'] and mycontext['split_merge'] == 'Merged':
+    broadcastingList = mycontext['ipAddresses']
+  else:
+    broadcastingList = mycontext['group']
+
+  broadcast(msg, header, port, broadcastingList)
+
+  # If the bridge ip is not in my group (It is always in group 1) and the groups are not split
+  # Then send message to bridge ip as well
+  if mycontext['bridgeIp'] not in mycontext['group'] and mycontext['split_merge'] == 'Merged':
+    print "I am sending to the bridge"
+    send_msg(msg, header, mycontext['bridgeIp'], port)
 
 # ------------------------------------------------------------------------------    
 # Called when broadcasting a message to other vessels
 # ------------------------------------------------------------------------------ 
-def broadcast(msg, header, port):
-  for ip in mycontext['ipAddresses']:
+def broadcast(msg, header, port, broadcastingList):
+  for ip in broadcastingList:
       # Checking if the ip is the machine we are on or not.
       # Sending messages only to the other nodes in the network
       if ip != mycontext['ip']:
         send_msg(msg, header, ip, port)
+  
+
+# ------------------------------------------------------------------------------    
+# Called when bridge receive a message and is used to send messages to other group
+# ------------------------------------------------------------------------------ 
+def bridge_broadcast(msg, header, port):
+  if msg.ip in mycontext['group']:
+    print "Relaying to other group"
+    # Broadcast to all ip not in my group
+    broadcast(msg, header, port, [x for x in mycontext['ipAddresses'] if x not in mycontext['group']])
+  else:
+    print "Relaying to my group"
+    # Broadcast to my group
+    broadcast(msg, header, port, mycontext['group'])
 
 
 # ------------------------------------------------------------------------------    
 # Called when we need to send a message to another node
 # ------------------------------------------------------------------------------ 
 def send_msg(msg, header, ip, port):
-  print "Sending message to " + ip
-  # Opening a socket connection to the chosen node
-  socketobject = openconn(ip, port)
-  # Sending a message over the opened connection
-  msg = header + "\n" + msg.parseObjectToString()
-  socketobject.send(msg)
-  # Closing socket when message has been sent
-  socketobject.close()
+  try:
+    print "Sending message to " + ip
+    # Opening a socket connection to the chosen node
+    socketobject = openconn(ip, port)
+    # If message is of object type Message, parse it correctly
+    if isinstance(msg, Message):
+      msg = header + "\n" + msg.parseObjectToString()
+    else:
+      msg = header + "\n" + msg
+
+    # Sending a message over the opened connection
+    socketobject.send(msg)
+    # Closing socket when message has been sent
+    socketobject.close()
+  except Exception, e:
+    stre = str(e)
+    if stre == "Connection refused":
+      print "Connection refused. Trying again later"
+      pass
+    else:
+      print "Exception in board: %s, %s\n" %(type(e), e)
+      raise
 
 # ------------------------------------------------------------------------------    
 # Called when we have a message to add
@@ -285,7 +408,7 @@ def add_to_board(msg):
   # Releasing board lock
   mycontext['boardLock'].release()
   
-  broadcast(msg, "BOARDUPDATE", mycontext['port'])
+  group_broadcast(msg, "BOARDUPDATE", mycontext['port'])
   print "Finished message " + msg.msg + " at runtime " + str(getruntime())
 
 # ------------------------------------------------------------------------------    
@@ -298,12 +421,12 @@ def append_to_board(msg):
     print "Wrong order found for message " + msg.msg
     decide_order(msg, mycontext['board'][msg.seq])
   else:
-    # Increment logical clock
-    mycontext['ts'] += 1
     # If message had been set to deleted earlier, we simply update the message in it
     if msg.seq in mycontext['board'] and mycontext['board'][seq].state == 'deleted':
       mycontext['board'].msg = fetch_comment(msg)
     else:
+      # Increment logical clock
+      mycontext['ts'] += 1
       mycontext['board'][msg.seq] = msg
 
 
@@ -330,12 +453,12 @@ class Message:
   ip = ""
   state = ""
 
-  def __init__(self, msg="", seq=-1, ip=""):
+  def __init__(self, msg="", seq=-1, ip="", state="active"):
     self.seq = int(seq)
     self.msg = msg
     self.ip = ip
-    self.state = "active"
-    print self.parseObjectToString()
+    self.state = state
+    #print self.parseObjectToString()
 
   # ------------------------------------------------------------------------------    
   # Parses the object to a string with all variables in sequence
@@ -396,6 +519,11 @@ if callfunc == 'initialize':
   
   #logical clock\timestamp
   mycontext['ts'] = 0 
+
+  # Check if the groups are split or merged
+  mycontext['split_merge'] = "Merged"
+  # If groups merge, what was the timestamp at when splitting
+  mycontext['merge_count'] = 0
 
   # Fetch the neighbouring nodes
   mycontext['ipAddresses'] = []
