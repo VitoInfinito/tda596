@@ -429,10 +429,10 @@ def append_to_board(msg):
   else:
     # If message had been set to deleted earlier, we simply update the message in it
     if msg.seq in mycontext['board'] and mycontext['board'][msg.seq].state == 'deleted':
-      mycontext['board'][msg.seq].msg = fetch_comment(msg)
+      mycontext['board'][msg.seq].msg = msg.msg
       # If state of groups are split, also add message to queue
       if mycontext['split_merge'] == 'Split':
-        mycontext['splitQueue'][msg.seq].msg = fetch_comment(msg)
+        mycontext['splitQueue'][msg.seq].msg = msg.msg
     # If message received was in another state, the message was received through a split queue
     elif msg.seq in mycontext['board'] and mycontext['board'][msg.seq].state != msg.state:
       mycontext['board'][msg.seq].state = msg.state
