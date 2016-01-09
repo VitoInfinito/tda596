@@ -115,8 +115,6 @@ def split_merge(action):
     mycontext['split_merge'] = 'Merged'
   else:
     mycontext['split_merge'] = 'Split'
-    # Keeping track of when split occured
-    #mycontext['merge_count'] = mycontext['ts']
 
   broadcast("comment=" + mycontext['split_merge'], "GROUPING", mycontext['port'], mycontext['ipAddresses'])
 
@@ -255,7 +253,7 @@ def generate_html_page(status=""):
 
   if mycontext['ip'] == mycontext['bridgeIp']:
     grouping_button = '''Current state is <form class="entry" method="post" action="Grouping" >
-                        <input type="submit" name="action" value="%s" />''' %(mycontext['split_merge'])
+                        <input type="submit" name="action" value="%s" /></form>''' %(mycontext['split_merge'])
   else:
     grouping_button = 'Current state is ' + mycontext['split_merge']
 
@@ -321,14 +319,11 @@ def rec_msg(msg, sender_ip):
   elif request == "GROUPING":
     # Sets splitting or merging state of the groups
     mycontext['split_merge'] = fetch_comment(msg)
-    # If groups are split, set a timestamp
-    if mycontext['split_merge'] == 'Split':
-      mycontext['merge_count'] = mycontext['ts']
   elif request == "MESSAGEREQUEST":
     # Called when bridge is requesting a message recap after merging
     print "Bridge has requested messages"
-    print mycontext['splitQueue']
     for saved_msg in mycontext['splitQueue']:
+      # Standard header is boardupdate, change to delete if message had been deleted
       header = "BOARDUPDATE"
       if mycontext['splitQueue'][saved_msg].state == 'deleted':
         header = "DELETEMESSAGE"
@@ -542,8 +537,6 @@ if callfunc == 'initialize':
 
   # Check if the groups are split or merged
   mycontext['split_merge'] = "Merged"
-  # If groups merge, what was the timestamp at when splitting
-  mycontext['merge_count'] = 0
 
   # Fetch the neighbouring nodes
   mycontext['ipAddresses'] = []
