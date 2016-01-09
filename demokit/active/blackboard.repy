@@ -32,7 +32,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
     elif msgheader.startswith( 'POST /Grouping' ):
       handle_request_grouping(msgheader, sockobj, thiscommhandle)
     else:
-      rec_msg(msgheader)
+      rec_msg(msgheader, ip)
   except Exception, e:
     stre = str(e)
     if stre == "Socket closed" or stre == "timed out":
@@ -116,19 +116,19 @@ def split_merge(action):
   else:
     mycontext['split_merge'] = 'Split'
     # Keeping track of when split occured
-    mycontext['merge_count'] = mycontext['ts']
+    #mycontext['merge_count'] = mycontext['ts']
 
   broadcast("comment=" + mycontext['split_merge'], "GROUPING", mycontext['port'], mycontext['ipAddresses'])
 
   # If groups were merged again, send all lost messages to other group and request theirs
   if mycontext['split_merge'] == 'Merged':
     print "Bridge is merging"
-    while mycontext['merge_count'] < mycontext['ts']:
-      if mycontext['merge_count'] in mycontext['board']:
-        # Broadcast to all ip not in my group
-        broadcast(mycontext['board'][mycontext['merge_count']], "BOARDUPDATE", mycontext['port'], [x for x in mycontext['ipAddresses'] if x not in mycontext['group']])
-        mycontext['merge_count'] += 1
+    # Sending all messages saved in split queue
+    for msg in mycontext['splitQueue']:
+      broadcast(mycontext['splitQueue'][msg], "BOARDUPDATE", mycontext['port'], [x for x in mycontext['ipAddresses'] if x not in mycontext['group']])
 
+    # Clearing split queue of messges in case of new split
+    mycontext['splitQueue'].clear()
     # Requesting first vessel in other group to send its messages to first group
     send_msg("", "MESSAGEREQUEST", [x for x in mycontext['ipAddresses'] if x not in mycontext['group']][0], mycontext['port'])
   
@@ -143,6 +143,9 @@ def deleteMessage(ref_ts, ref_ip, ref_port):
     # delete actions were made concurrently and for future implementations if user would want to
     # be able to bring back a deleted message)
     mycontext['board'][ref_ts].state = "deleted"
+    # If we are split, also add the change to the split queue
+    if mycontext['split_merge'] == 'Split':
+      mycontext['splitQueue'][ref_ts] = mycontext['board'][ref_ts]
 
     # Broadcasting the message
     group_broadcast(mycontext['board'][ref_ts], "DELETEMESSAGE", mycontext['port'])
@@ -276,7 +279,7 @@ def generate_html_page(status=""):
 # ------------------------------------------------------------------------------    
 # Called when we receive a message that is not POST or GET
 # ------------------------------------------------------------------------------ 
-def rec_msg(msg):
+def rec_msg(msg, sender_ip):
   # Parsing out request and comment from message 
   request = msg.split('\n', 1)[0]
 
@@ -285,7 +288,7 @@ def rec_msg(msg):
   if mycontext['ip'] == mycontext['bridgeIp'] and mycontext['split_merge'] == 'Merged':
     print "I am bridge and will relay message"
     x = Message(fetch_comment(msg), fetch_sequence(msg), fetch_ip(msg), fetch_state(msg))
-    bridge_broadcast(x, request, mycontext['port'])
+    bridge_broadcast(x, request, mycontext['port'], sender_ip)
 
   # If message had request BOARDUPDATE, we received a new comment from another node
   if request == "BOARDUPDATE":
@@ -306,6 +309,9 @@ def rec_msg(msg):
     if seq in mycontext['board']:
       if mycontext['board'][seq].ip == ip:
         mycontext['board'][seq].state = "deleted"
+        # If we are split, also add the change to the split queue
+        if mycontext['split_merge'] == 'Split':
+          mycontext['splitQueue'][seq] = mycontext['board'][seq]
     else:
       # Creating an empty message with state set to deleted to compensate since the message
       # did not arrive before the message was deleted on this vessel
@@ -320,10 +326,14 @@ def rec_msg(msg):
       mycontext['merge_count'] = mycontext['ts']
   elif request == "MESSAGEREQUEST":
     # Called when bridge is requesting a message recap after merging
-    while mycontext['merge_count'] < mycontext['ts']:
-      if mycontext['merge_count'] in mycontext['board']:
-        bridge_broadcast(mycontext['board']['merge_count'], "BOARDUPDATE", mycontext['port'])
-        mycontext['merge_count'] += 1
+    print "Bridge has requested messages"
+    print mycontext['splitQueue']
+    for saved_msg in mycontext['splitQueue']:
+      header = "BOARDUPDATE"
+      if mycontext['splitQueue'][saved_msg].state == 'deleted':
+        header = "DELETEMESSAGE"
+      send_msg(mycontext['splitQueue'][saved_msg], header, mycontext['bridgeIp'], mycontext['port'])
+    mycontext['splitQueue'].clear()
 
 # ------------------------------------------------------------------------------    
 # Called when broadcasting messages to group
@@ -357,8 +367,8 @@ def broadcast(msg, header, port, broadcastingList):
 # ------------------------------------------------------------------------------    
 # Called when bridge receive a message and is used to send messages to other group
 # ------------------------------------------------------------------------------ 
-def bridge_broadcast(msg, header, port):
-  if msg.ip in mycontext['group']:
+def bridge_broadcast(msg, header, port, sender_ip):
+  if sender_ip in mycontext['group']:
     print "Relaying to other group"
     # Broadcast to all ip not in my group
     broadcast(msg, header, port, [x for x in mycontext['ipAddresses'] if x not in mycontext['group']])
@@ -417,17 +427,27 @@ def add_to_board(msg):
 def append_to_board(msg):
   # If sequence exists in board and it is not identical to message there
   # Can not have the same sequence ID if from the same ip with different messages
-  if msg.seq in mycontext['board'] and msg.ip != mycontext['board'][msg.seq].ip:
+  # Also check if the state are the same. If not, the message may have been received through a split queue
+  if msg.seq in mycontext['board'] and msg.ip != mycontext['board'][msg.seq].ip and mycontext['board'][msg.seq].state == msg.state:
     print "Wrong order found for message " + msg.msg
     decide_order(msg, mycontext['board'][msg.seq])
   else:
     # If message had been set to deleted earlier, we simply update the message in it
-    if msg.seq in mycontext['board'] and mycontext['board'][seq].state == 'deleted':
-      mycontext['board'].msg = fetch_comment(msg)
+    if msg.seq in mycontext['board'] and mycontext['board'][msg.seq].state == 'deleted':
+      mycontext['board'][msg.seq].msg = fetch_comment(msg)
+      # If state of groups are split, also add message to queue
+      if mycontext['split_merge'] == 'Split':
+        mycontext['splitQueue'][msg.seq].msg = fetch_comment(msg)
+    # If message received was in another state, the message was received through a split queue
+    elif msg.seq in mycontext['board'] and mycontext['board'][msg.seq].state != msg.state:
+      mycontext['board'][msg.seq].state = msg.state
     else:
       # Increment logical clock
       mycontext['ts'] += 1
       mycontext['board'][msg.seq] = msg
+      # If state of groups are split, also add message to queue
+      if mycontext['split_merge'] == 'Split':
+        mycontext['splitQueue'][msg.seq] = msg
 
 
 # ------------------------------------------------------------------------------    
@@ -557,7 +577,7 @@ if callfunc == 'initialize':
 
   #Initialize board to hold future board entries
   mycontext['board'] = {}
-  mycontext['modQueue'] = {}
+  mycontext['splitQueue'] = {}
 
   # Initialize lock to handle mutex
   mycontext['boardLock'] = getlock()
